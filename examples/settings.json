@@ -1,0 +1,9 @@
+{
+  "theme": "dark",
+  "hideThinkingBlock": true,
+  "modelThinkingLevels": {
+    "deepseek/deepseek-flash": "max"
+  },
+  "defaultProvider": "unsloth",
+  "defaultModel": "ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M"
+}

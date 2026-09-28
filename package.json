@@ -1,0 +1,11 @@
+{
+  "name": "pi-agent-config",
+  "version": "1.0.0",
+  "description": "Personal Pi coding agent configuration: cross-platform extensions + setup.",
+  "keywords": [
+    "pi-package",
+    "pi-coding-agent"
+  ],
+  "private": true,
+  "license": "MIT"
+}

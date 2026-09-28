@@ -1,0 +1,40 @@
+{
+  "providers": {
+    "unsloth": {
+      "baseUrl": "http://localhost:8888/v1",
+      "api": "openai-completions",
+      "apiKey": "none",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false
+      },
+      "models": [
+        {
+          "id": "ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
+          "name": "Ornith-1.5-35B-A3B",
+          "input": ["text"],
+          "contextWindow": 96000,
+          "maxTokens": 10000
+        }
+      ]
+    },
+    "llama-cpp": {
+      "baseUrl": "http://localhost:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "none",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false
+      },
+      "models": [
+        {
+          "id": "prism-ml/Ternary-Bonsai-2-27B-gguf",
+          "name": "Ternary-Bonsai-2-27B",
+          "input": ["text"],
+          "contextWindow": 32768,
+          "maxTokens": 8192
+        }
+      ]
+    }
+  }
+}
