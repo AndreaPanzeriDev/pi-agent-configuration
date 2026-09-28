@@ -17,6 +17,30 @@ type State = "idle" | "recording" | "transcribing";
 
 const SPINNER = ["⠋", "⠙", "⠹", "⸸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+// 9 levels from a thin sliver (▁) to a full block (█).
+const METER = "▁▂▃▄▅▆▇█";
+const BAR_COUNT = 14;   // keep it SMALL — just a tiny red bar strip
+const RED = "\x1b[91m"; // ANSI: bright red foreground
+const RESET = "\x1b[0m"; // ANSI: reset
+let wave = 0;           // phase for the traveling wave
+
+// A tiny, random-looking red wave animation. Each bar wobbles around a
+// traveling sine wave so the strip looks like moving water. It only needs to
+// make it obvious that recording is live, so it does NOT reflect the actual
+// microphone level — it's just a minimal visual cue. Rendered in red using
+// ANSI codes (the widget renderer interprets them).
+function renderWave(): string {
+  wave += 0.5;
+  let s = "";
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const base = 0.5 + 0.4 * Math.sin(wave / 4 + i * 0.6);
+    const jitter = (Math.random() - 0.5) * 0.35;
+    const v = Math.max(0, Math.min(1, base + jitter));
+    s += METER[Math.min(METER.length - 1, Math.floor(v * METER.length))];
+  }
+  return `${RED}${s}${RESET}`;
+}
+
 let state: State = "idle";
 let proc: ReturnType<typeof spawn> | null = null;
 let resultFile = "";
@@ -52,27 +76,28 @@ function errorHint(): string {
  *
  * Resolution order (first existing wins):
  *   1. `$VOICE_PYTHON` (explicit override)
- *   2. the conventional `~/.pi/voice-venv` (created by ./setup.sh)
- *   3. the system `python3` / `python`
- *   4. the system `python3` / `python`
+ *   2. `.venv` (next to this extension) or the conventional `~/.pi/voice-venv`
+ *      created by ./setup.sh — both `bin/` (Unix) and `Scripts/` (Windows).
+ *   3. the system `python3` / `python` (resolved through PATH by spawn).
  */
 function resolvePython(): string {
   const envPy = process.env.VOICE_PYTHON?.trim();
   if (envPy) return envPy;
 
   const isWin = process.platform === "win32";
-  const exe = isWin ? "python.exe" : "python";
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
-  const candidates: string[] = [
-    join(EXT_DIR, ".venv", "bin", exe),
-    join(EXT_DIR, ".venv", "Scripts", exe), // Windows
-    join(home, ".pi", "voice-venv", "bin", exe),
-    isWin ? "python" : "python3",
-  ];
-  for (const c of candidates) {
-    if (existsSync(c)) return c;
+  const venvDirs = [join(EXT_DIR, ".venv"), join(home, ".pi", "voice-venv")];
+  const layouts: string[][] = isWin
+    ? [["Scripts", "python.exe"], ["bin", "python.exe"]]
+    : [["bin", "python3"], ["bin", "python"], ["Scripts", "python.exe"]];
+
+  for (const dir of venvDirs) {
+    for (const parts of layouts) {
+      const candidate = join(dir, ...parts);
+      if (existsSync(candidate)) return candidate;
+    }
   }
-  return candidates[candidates.length - 1];
+  return isWin ? "python" : "python3";
 }
 
 const SCRIPT = join(EXT_DIR, "voice.py");
@@ -83,16 +108,14 @@ function render(ctx: ExtensionContext) {
     ctx.ui.setWidget("voice", undefined);
     return;
   }
-  const spin = SPINNER[frame % SPINNER.length];
-  const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
   if (state === "recording") {
-    ctx.ui.setStatus("voice", `🎙 REC ${elapsed}s`);
-    ctx.ui.setWidget("voice", [
-      `${spin} ● REC  ${elapsed}s  — premi Ctrl+Shift+M per fermare`,
-    ]);
+    ctx.ui.setStatus("voice", "🎙 REC");
+    ctx.ui.setWidget("voice", [renderWave()]);
   } else {
-    ctx.ui.setStatus("voice", `✍ trascrizione ${elapsed}s`);
-    ctx.ui.setWidget("voice", [`${spin} ✍ trascrivo…  ${elapsed}s`]);
+    // transcribing — brief spinner, no audio to visualize
+    const spin = SPINNER[frame % SPINNER.length];
+    ctx.ui.setStatus("voice", "✍ trascrizione");
+    ctx.ui.setWidget("voice", [`${spin} ✍ trascrivo…`]);
   }
 }
 

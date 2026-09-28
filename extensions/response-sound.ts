@@ -74,7 +74,8 @@ function detectPlayer(): { cmd: string; args(wavPath: string, vol: number): [str
 	if (process.platform === "darwin") {
 		const afplay = which("afplay");
 		if (afplay) {
-			return { cmd: afplay, args: (wav) => [[wav], []] };
+			// afplay ships with macOS and supports -v <0..1>.
+			return { cmd: afplay, args: (wav, vol) => [["-v", String(vol), wav], []] };
 		}
 	}
 

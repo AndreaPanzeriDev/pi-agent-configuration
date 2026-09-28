@@ -35,8 +35,11 @@ import argparse
 import os
 import signal
 import sys
+import tempfile
 import threading
 import time
+
+from voice_models import resolve_mlx_model
 
 # --------------------------------------------------------------------------- #
 # Backend detection
@@ -251,9 +254,9 @@ def _transcribe_faster_whisper(wav_path, args):
 
 def _transcribe_mlx(wav_path, args):
     """MLX Whisper (Apple Silicon GPU via Metal)."""
-    model_name = args.model
-    print(f"[voice] device: mps ({model_name})", file=sys.stderr)
-    return model_name
+    model_ref = resolve_mlx_model(args.model)
+    print(f"[voice] device: mps ({model_ref})", file=sys.stderr)
+    return model_ref
 
 
 def _run_transcribe(wav_path, args, backend):
@@ -261,7 +264,7 @@ def _run_transcribe(wav_path, args, backend):
         model_ref = _transcribe_mlx(wav_path, args)
         result = mlx_whisper.transcribe(
             wav_path,
-            model_name=model_ref,
+            path_or_hf_repo=model_ref,
             language=_resolve_language(args.language) or None,
             initial_prompt=args.initial_prompt or None,
         )
@@ -303,7 +306,7 @@ def record_and_transcribe(args, backend):
     print(f"[voice] stopped after {duration:.1f}s, transcribing...", file=sys.stderr)
     sys.stderr.flush()
 
-    wav_path = os.path.join("/tmp", f"pi_voice_{os.getpid()}.wav")
+    wav_path = os.path.join(tempfile.gettempdir(), f"pi_voice_{os.getpid()}.wav")
     _write_wav(wav_path, audio, args.rate)
 
     text, lang, lang_prob = _run_transcribe(wav_path, args, backend)
@@ -322,7 +325,7 @@ def record_and_transcribe(args, backend):
 
 
 def _emit(text, args):
-    output = args.output or os.path.join("/tmp", "pi_voice_result.txt")
+    output = args.output or os.path.join(tempfile.gettempdir(), "pi_voice_result.txt")
     with open(output, "w", encoding="utf-8") as f:
         f.write(text)
     print(text)

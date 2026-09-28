@@ -9,12 +9,29 @@
 #
 # Usage:
 #   git clone <repo> ~/pi-agent-config
-#   ~/pi-agent-config/setup.sh
+#   ~/pi-agent-config/setup.sh             # full setup
+#   ~/pi-agent-config/setup.sh --no-native # skip system/Python deps
+#
+# Options:
+#   --no-native   link extensions + install configs, but do NOT run the
+#                 per-extension native setup (Python venv, PortAudio, model…)
+#   -h, --help    show this help
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 DEST_DIR="$AGENT_DIR/extensions"
+
+SKIP_NATIVE=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-native|--skip-native) SKIP_NATIVE=1 ;;
+    -h|--help)
+      sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) printf '\033[1;33m[!]\033[0m Argomento ignorato: %s\n' "$arg" ;;
+  esac
+done
 
 log()  { printf '\033[1;34m[setup]\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m[✓]\033[0m %s\n' "$*"; }
@@ -62,11 +79,15 @@ if [ -d "$SCRIPT_DIR/examples" ]; then
 fi
 
 # --- 3. run each extension's native setup ----------------------------------
-for s in "$SCRIPT_DIR"/extensions/*/setup.sh; do
-  [ -e "$s" ] || continue
-  log "Setup dipendenze: $(basename "$(dirname "$s")")"
-  bash "$s"
-done
+if [ "$SKIP_NATIVE" -eq 0 ]; then
+  for s in "$SCRIPT_DIR"/extensions/*/setup.sh; do
+    [ -e "$s" ] || continue
+    log "Setup dipendenze: $(basename "$(dirname "$s")")"
+    bash "$s"
+  done
+else
+  warn "--no-native: salto il setup delle dipendenze native"
+fi
 
 # --- done ------------------------------------------------------------------
 echo

@@ -1,0 +1,13 @@
+{
+  "header": true,
+  "widget": true,
+  "widgetPlacement": "aboveEditor",
+  "terminalTitle": true,
+  "logo": "large",
+  "autoTitle": true,
+  "autoTitleOnResume": true,
+  "titleModel": "",
+  "titleMaxChars": 64,
+  "titleMaxTokens": 256,
+  "titleTimeoutMs": 20000
+}
