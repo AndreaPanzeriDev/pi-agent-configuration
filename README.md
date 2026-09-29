@@ -10,9 +10,9 @@ extensions, automatic setup, and config files, in a single repo reproducible on
 |------|------------|
 | `extensions/voice-to-chat/` | **100% local** voice dictation. macOS → **MLX**, Linux/Windows → **faster-whisper** (CUDA when available). Cross-platform recording via `sounddevice`/PortAudio. |
 | `extensions/btw/` | Side question (`/btw`), like in Claude Code: asks the same model with the current conversation as context, no tools, single answer in an overlay panel, without disturbing the main agent. |
-| `extensions/pi-banner.ts` | Shows the session title (auto-generated from the first message) in the header, sticky line, and terminal title. `/title` command. |
+| `extensions/pi-banner/` | Shows the session title (auto-generated from the first message) in the header, sticky line, and terminal title. `/title` command. |
 | `extensions/token-stats/` | Token and cost counts per session, model, and project, with a daily chart. `/stats`, `/stats export`, `/stats prune`, `/stats reset` commands. |
-| `extensions/response-sound.ts` | Plays a short sound when Pi finishes answering. `/sound` commands. Already cross-platform (`afplay`, `paplay`, …). |
+| `extensions/response-sound/` | Plays a short sound when Pi finishes answering. `/sound` commands. Already cross-platform (`afplay`, `paplay`, …). |
 | `setup.sh` | Reproduces the whole configuration on a new machine. |
 | `examples/` | Example config files (`settings.json`, `models.json`, `response-sound.json`, `pi-banner.json`). |
 
@@ -84,10 +84,12 @@ pi-agent-config/
 │   │   └── .gitignore
 │   ├── btw/              # side question panel (/btw)
 │   │   └── index.ts
-│   ├── pi-banner.ts      # session title + header
+│   ├── pi-banner/          # session title + header
+│   │   └── index.ts
 │   ├── token-stats/      # token/cost stats (/stats)
 │   │   └── index.ts
-│   └── response-sound.ts
+│   └── response-sound/     # answer sound (/sound)
+│       └── index.ts
 └── examples/
     ├── settings.json
     ├── models.json
