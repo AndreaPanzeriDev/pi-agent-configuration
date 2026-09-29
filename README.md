@@ -1,88 +1,91 @@
 # pi-agent-config
 
-La mia configurazione personale del **[Pi coding agent](https://pi.dev)**: le
-estensioni cross-platform, il setup automatico e i file di configurazione, in
-un unico repo riproducibile su **Linux** e **macOS (Apple Silicon)**.
+My personal **[Pi coding agent](https://pi.dev)** configuration: cross-platform
+extensions, automatic setup, and config files, in a single repo reproducible on
+**Linux** and **macOS (Apple Silicon)**.
 
-## Contenuto
+## Contents
 
-| Percorso | Cosa è |
-|----------|--------|
-| `extensions/voice-to-chat/` | Dettatura vocale **100% locale**. macOS → **MLX**, Linux/Windows → **faster-whisper** (CUDA se disponibile). Registrazione cross-platform con `sounddevice`/PortAudio. |
-| `extensions/pi-banner.ts` | Mostra il titolo della sessione (generato automaticamente dal primo messaggio) in header, riga sticky e titolo del terminale. Comando `/title`. |
-| `extensions/token-stats/` | Conta token e costi per sessione, modello e progetto, con grafico giornaliero. Comandi `/stats`, `/stats export`, `/stats prune`, `/stats reset`. |
-| `extensions/response-sound.ts` | Suona un breve suono quando Pi finisce di rispondere. Comandi `/sound`. Già cross-platform (`afplay`, `paplay`, …). |
-| `setup.sh` | Riproduce tutta la configurazione su una macchina nuova. |
-| `examples/` | File di configurazione di esempio (`settings.json`, `models.json`, `response-sound.json`, `pi-banner.json`). |
+| Path | What it is |
+|------|------------|
+| `extensions/voice-to-chat/` | **100% local** voice dictation. macOS → **MLX**, Linux/Windows → **faster-whisper** (CUDA when available). Cross-platform recording via `sounddevice`/PortAudio. |
+| `extensions/btw/` | Side question (`/btw`), like in Claude Code: asks the same model with the current conversation as context, no tools, single answer in an overlay panel, without disturbing the main agent. |
+| `extensions/pi-banner.ts` | Shows the session title (auto-generated from the first message) in the header, sticky line, and terminal title. `/title` command. |
+| `extensions/token-stats/` | Token and cost counts per session, model, and project, with a daily chart. `/stats`, `/stats export`, `/stats prune`, `/stats reset` commands. |
+| `extensions/response-sound.ts` | Plays a short sound when Pi finishes answering. `/sound` commands. Already cross-platform (`afplay`, `paplay`, …). |
+| `setup.sh` | Reproduces the whole configuration on a new machine. |
+| `examples/` | Example config files (`settings.json`, `models.json`, `response-sound.json`, `pi-banner.json`). |
 
-## Installazione su una macchina nuova
+## Install on a new machine
 
 ```bash
-git clone <tuo-URL> ~/pi-agent-config
+git clone <your-URL> ~/pi-agent-config
 ~/pi-agent-config/setup.sh
 ```
 
-Lo script:
-1. collega ogni estensione dentro `~/.pi/agent/extensions/` (symlink);
-2. installa i file di config di esempio **solo se non esistono già**;
-3. esegue il `setup.sh` di ogni estensione (per `voice-to-chat`: crea il venv
-   Python, installa PortAudio + ffmpeg su macOS e il modello Whisper).
+The script:
+1. links every extension into `~/.pi/agent/extensions/` (symlinks);
+2. installs the example config files **only if they don't already exist**;
+3. runs each extension's own `setup.sh` (for `voice-to-chat`: creates the Python
+   venv, installs PortAudio + ffmpeg on macOS, and the Whisper model).
 
-Se vuoi solo i collegamenti e i config, senza installare le dipendenze native:
+If you only want the links and configs, without installing native dependencies:
 
 ```bash
 ~/pi-agent-config/setup.sh --no-native
 ```
 
-Poi:
+Then:
 ```bash
-pi          # e dentro:  /login   (le chiavi API NON sono versionate)
+pi          # and inside:  /login   (API keys are NOT versioned)
 ```
 
-### Alternativa: come Pi Package
+### Alternative: as a Pi Package
 
-Il repo è anche un valido **Pi Package**:
+The repo is also a valid **Pi Package**:
 
 ```bash
-pi install git:github.com/<tuo-utente>/<repo>
+pi install git:github.com/<your-user>/<repo>
 ```
 
-> Nota: l'installazione come package non esegue il setup nativo Python; per la
-> dettatura vocale serve comunque eseguire
+> Note: installing as a package does not run the native Python setup; for voice
+> dictation you still need to run
 > `extensions/voice-to-chat/setup.sh`.
 
-## ⚠️ Sicurezza
+## ⚠️ Security
 
-- **`auth.json` non è nel repo** (contiene le chiavi API). Su ogni macchina
-  devi rifare `/login`, oppure copiartelo manualmente in modo sicuro.
-- `models.json` / `models-store.json` puntano a endpoint **locali** (es.
-  `http://localhost:8888`) — modificali per le tue macchine.
+- **`auth.json` is not in the repo** (it holds the API keys). On each machine
+  redo `/login`, or copy it over manually in a secure way.
+- `models.json` / `models-store.json` point to **local** endpoints (e.g.
+  `http://localhost:8888`) — adjust them for your machines.
 
-## Aggiornare
+## Updating
 
 ```bash
 cd ~/pi-agent-config && git pull
-# se hai aggiunto/modificato estensioni:
+# if you added/modified extensions:
 ./setup.sh
 ```
 
-## Struttura
+## Structure
 
 ```
 pi-agent-config/
-├── package.json          # manifest Pi Package
-├── setup.sh              # installer master (Linux/macOS), --no-native opzionale
-├── .gitignore            # esclude auth.json, venv, __pycache__
+├── package.json          # Pi Package manifest
+├── setup.sh              # master installer (Linux/macOS), optional --no-native
+├── .gitignore            # excludes auth.json, venv, __pycache__
 ├── extensions/
 │   ├── voice-to-chat/
-│   │   ├── index.ts        # estensione Pi
-│   │   ├── voice.py        # backend Python cross-platform (MLX / faster-whisper)
-│   │   ├── voice_models.py # mapping nomi modello → repo MLX
-│   │   ├── setup.sh        # installa venv + PortAudio/ffmpeg + modello
+│   │   ├── index.ts        # Pi extension
+│   │   ├── voice.py        # cross-platform Python backend (MLX / faster-whisper)
+│   │   ├── voice_models.py # model name → MLX repo mapping
+│   │   ├── setup.sh        # installs venv + PortAudio/ffmpeg + model
 │   │   ├── README.md
 │   │   └── .gitignore
-│   ├── pi-banner.ts      # titolo sessione + header
-│   ├── token-stats/      # statistiche token/costi (/stats)
+│   ├── btw/              # side question panel (/btw)
+│   │   └── index.ts
+│   ├── pi-banner.ts      # session title + header
+│   ├── token-stats/      # token/cost stats (/stats)
 │   │   └── index.ts
 │   └── response-sound.ts
 └── examples/
@@ -92,9 +95,9 @@ pi-agent-config/
     └── pi-banner.json
 ```
 
-## Test rapido dell'estensione vocale
+## Quick test of the voice extension
 
 ```bash
 ~/.pi/voice-venv/bin/python ~/.pi/agent/extensions/voice-to-chat/voice.py \
-    --wav mia_registrazione.wav
+    --wav my_recording.wav
 ```
