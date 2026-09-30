@@ -302,15 +302,18 @@ function currentState(pi: ExtensionAPI): BannerState {
 
 /** Logo π grande in ASCII art, colorato con il colore "accent" del tema. */
 function getLargeLogo(theme: Theme): string[] {
-	const block = "█";
 	const accent = (text: string) => theme.fg("accent", text);
 	return [
-		`     ${accent("██")}  ${accent("██")}`,
-		`  ${accent(block.repeat(14))}`,
-		`     ${accent("██")}    ${accent("██")}`,
-		`     ${accent("██")}    ${accent("██")}`,
-		`     ${accent("██")}    ${accent("██")}`,
-		`     ${accent("██")}    ${accent("██")}`,
+		accent("   ███████████████████████████╗  "),
+		accent("   ╚══██████╔════════██████╔══╝  "),
+		accent("      ██████║        ██████║     "),
+		accent("      ██████║        ██████║     "),
+		accent("      ██████║        ██████║     "),
+		accent("      ██████║        ██████║     "),
+		accent("      ██████║        ██████║     "),
+		accent("      ██████║        ██████║     "),
+		accent("   ████████████╗  ████████████╗  "),
+		accent("   ╚═══════════╝  ╚═══════════╝  "),
 	];
 }
 
