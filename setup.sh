@@ -7,6 +7,7 @@
 #   2. install the example config files (only if not already present)
 #   3. offer to run each extension's own setup.sh (native deps: Python, PortAudio, …)
 #      (only for extensions that actually contain a setup.sh file)
+#   4. validate MCP servers with `pi mcp list` (first run downloads Chromium)
 #
 # Usage:
 #   git clone <repo> ~/pi-agent-config
@@ -120,6 +121,16 @@ else
         ;;
     esac
   done
+fi
+
+# --- 4. validate MCP servers (downloads Playwright Chromium once) ---------------
+if command -v pi >/dev/null 2>&1 && [ -e "$AGENT_DIR/mcp.json" ]; then
+  log "Verifica dei server MCP (al primo avvio scarica Chromium, serve rete)…"
+  if pi mcp list; then
+    ok "server MCP raggiungibili"
+  else
+    warn "'pi mcp list' ha segnalato problemi (vedi sopra); riprova con la rete attiva"
+  fi
 fi
 
 # --- done ------------------------------------------------------------------

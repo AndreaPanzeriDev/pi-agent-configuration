@@ -14,7 +14,20 @@ extensions, automatic setup, and config files, in a single repo reproducible on
 | `extensions/token-stats/` | Token and cost counts per session, model, and project, with a daily chart. `/stats`, `/stats export`, `/stats prune`, `/stats reset` commands. |
 | `extensions/response-sound/` | Plays a short sound when Pi finishes answering. `/sound` commands. Already cross-platform (`afplay`, `paplay`, …). |
 | `setup.sh` | Reproduces the whole configuration on a new machine. |
-| `examples/` | Example config files (`settings.json`, `models.json`, `response-sound.json`, `pi-banner.json`). |
+| `examples/` | Example config files (`settings.json`, `models.json`, `mcp.json`, `response-sound.json`, `pi-banner.json`). |
+
+## Browsing (MCP)
+
+Two MCP servers in `examples/mcp.json`, installed by `setup.sh` (never
+overwrites an existing `mcp.json`) and validated with `pi mcp list`:
+
+| Server | Use it for |
+|--------|------------|
+| `fetch` | Backend lookups: fetch a URL, get clean markdown back, no browser window. |
+| `playwright` | Full Chromium: navigate, click, type, DOM snapshot, **screenshots** — UI verification. |
+
+The first `pi mcp list` downloads Playwright's Chromium (~200 MB, one time,
+needs network) into `~/.cache/ms-playwright/`. Afterwards it works offline.
 
 ## Install on a new machine
 

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "@kazuph/mcp-fetch"],
+      "description": "Lightweight backend browsing: fetch a URL and return clean markdown, no browser window."
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"],
+      "description": "Full Chromium browser control: navigate, click, type, snapshot DOM, screenshot. For UI verification."
+    }
+  }
+}
