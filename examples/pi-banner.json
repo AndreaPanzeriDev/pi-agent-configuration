@@ -8,6 +8,7 @@
   "autoTitleOnResume": true,
   "titleModel": "",
   "titleMaxChars": 64,
+  "descriptionMaxChars": 280,
   "titleMaxTokens": 256,
   "titleTimeoutMs": 20000
 }

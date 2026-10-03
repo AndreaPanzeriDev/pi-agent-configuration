@@ -1,40 +1,50 @@
 /**
  * pi-banner — estensione per Pi
  * ==============================
- * Mostra, a ogni sessione, il titolo/descrizione della sessione:
+ * Mostra, a ogni sessione, il titolo e la descrizione della sessione:
  *
- *   Creare sito React con Vite
+ *   Header (sotto il logo π): descrizione estesa del task, generata dal
+ *   primo messaggio dell'utente.
+ *
+ *   Widget (riga sticky sopra l'editor): titolo corto della sessione.
  *
  * Il titolo viene generato automaticamente dal primo messaggio dell'utente
  * *prima* che il modello inizi a rispondere, ed è salvato nella sessione
  * (session_info): lo ritrovi anche riaprendo la sessione più tardi.
+ * La descrizione invece vive in memoria (rigenerata dal primo messaggio
+ * quando riapri la sessione).
  *
  * La descrizione compare:
- *   1. come header in alto nella chat, preceduta dal logo π (mode TUI);
- *   2. come riga sticky sopra l'editor, sempre visibile senza scorrere;
- *   3. nel titolo della finestra/terminale.
+ *   1. come header in alto nella chat, sotto il logo π (mode TUI);
+ *   2. il titolo corto resta come riga sticky sopra l'editor;
+ *   3. nel titolo della finestra/terminale (titolo corto).
  *
  * Il logo π dell'header può essere grande (ASCII art su più righe)
  * oppure piccolo (simbolo su una riga) tramite la chiave "logo".
  *
  * Configurazione: ~/.pi/agent/pi-banner.json
  *   {
- *     "header": true,              // π + titolo in alto nella chat
- *     "widget": true,              // riga sticky sopra l'editor
+ *     "header": true,              // π + descrizione in alto nella chat
+ *     "widget": true,              // titolo corto sticky sopra l'editor
  *     "widgetPlacement": "aboveEditor", // "aboveEditor" | "belowEditor"
  *     "terminalTitle": true,       // aggiorna il titolo del terminale
- *     "autoTitle": true,           // genera il titolo dal primo messaggio
- *     "autoTitleOnResume": true,   // genera il titolo riaprendo sessioni senza nome
- *     "titleModel": "",            // "provider/model" per il titolo; "" = modello corrente
- *     "titleMaxChars": 64,         // lunghezza massima del titolo
- *     "titleMaxTokens": 256,       // token massimi per la generazione del titolo
+ *     "autoTitle": true,           // genera titolo+descrizione dal primo messaggio
+ *     "autoTitleOnResume": true,   // genera titolo/descrizione riaprendo sessioni senza nome
+ *     "titleModel": "",            // "provider/model" per titolo/descrizione; "" = modello corrente
+ *     "titleMaxChars": 64,         // lunghezza massima del titolo corto
+ *     "descriptionMaxChars": 280,  // lunghezza massima della descrizione estesa
+ *     "titleMaxTokens": 256,       // token massimi per la generazione (titolo+descrizione)
  *     "titleTimeoutMs": 20000      // timeout della generazione
  *   }
  *
  * Comandi:
- *   /title              mostra il titolo corrente
+ *   /title              mostra il titolo corrente (e la descrizione)
  *   /title <testo>      imposta il titolo a mano
- *   /title auto         rigenera il titolo dal primo messaggio della sessione
+ *   /title auto         rigenera titolo+descrizione dal primo messaggio
+ *   /desc               mostra la descrizione corrente
+ *   /desc <testo>       imposta la descrizione a mano
+ *   /desc auto          rigenera la descrizione dal primo messaggio
+ *   /desc clear         nasconde la descrizione
  */
 
 import { randomUUID } from "node:crypto";
@@ -48,7 +58,7 @@ import {
 	type ExtensionContext,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 // ---------------------------------------------------------------------------
 // Configurazione
@@ -64,6 +74,7 @@ interface BannerConfig {
 	autoTitleOnResume: boolean;
 	titleModel: string;
 	titleMaxChars: number;
+	descriptionMaxChars: number;
 	titleMaxTokens: number;
 	titleTimeoutMs: number;
 }
@@ -78,6 +89,7 @@ const DEFAULT_CONFIG: BannerConfig = {
 	autoTitleOnResume: true,
 	titleModel: "",
 	titleMaxChars: 64,
+	descriptionMaxChars: 280,
 	titleMaxTokens: 256,
 	titleTimeoutMs: 20000,
 };
@@ -106,6 +118,9 @@ function loadConfig(): BannerConfig {
 		if (typeof raw.titleMaxChars === "number") {
 			config.titleMaxChars = Math.min(120, Math.max(24, Math.round(raw.titleMaxChars)));
 		}
+		if (typeof raw.descriptionMaxChars === "number") {
+			config.descriptionMaxChars = Math.min(600, Math.max(80, Math.round(raw.descriptionMaxChars)));
+		}
 		if (typeof raw.titleMaxTokens === "number") {
 			config.titleMaxTokens = Math.min(2048, Math.max(32, Math.round(raw.titleMaxTokens)));
 		}
@@ -123,6 +138,42 @@ const CONFIG = loadConfig();
 
 const WIDGET_KEY = "pi-banner-title";
 const PLACEHOLDER_TITLE = "sessione senza titolo";
+
+// ---------------------------------------------------------------------------
+// Stato della descrizione (in memoria, per sessione)
+// ---------------------------------------------------------------------------
+
+const descriptionBySession = new Map<string, string>();
+let currentDescription: string | undefined;
+
+function getSessionId(ctx: ExtensionContext): string | undefined {
+	try {
+		const sm = ctx.sessionManager as unknown as { getSessionId?: () => string };
+		return typeof sm.getSessionId === "function" ? sm.getSessionId() : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function getDescription(ctx?: ExtensionContext): string | undefined {
+	if (currentDescription) return currentDescription;
+	if (ctx) {
+		const sid = getSessionId(ctx);
+		if (sid) return descriptionBySession.get(sid);
+	}
+	return undefined;
+}
+
+function setDescription(text: string | undefined, ctx?: ExtensionContext): void {
+	currentDescription = text && text.trim() ? text.trim() : undefined;
+	if (ctx) {
+		const sid = getSessionId(ctx);
+		if (sid) {
+			if (currentDescription) descriptionBySession.set(sid, currentDescription);
+			else descriptionBySession.delete(sid);
+		}
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Utilita' su testi e messaggi
@@ -176,6 +227,19 @@ function provisionalTitle(text: string): string {
 	return clean;
 }
 
+/** Descrizione immediata (provvisoria): prime frasi del messaggio, compattate. */
+function provisionalDescription(text: string): string {
+	let clean = text.replace(/\s+/g, " ").trim();
+	if (!clean) return "";
+	if (clean.length > CONFIG.descriptionMaxChars) {
+		const cut = clean.slice(0, CONFIG.descriptionMaxChars - 1);
+		// Taglia sull'ultimo spazio per non spezzare le parole.
+		const lastSpace = cut.lastIndexOf(" ");
+		clean = `${(lastSpace > CONFIG.descriptionMaxChars * 0.5 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+	}
+	return clean;
+}
+
 /** Pulisce il titolo restituito dal modello. */
 function sanitizeTitle(raw: string): string | undefined {
 	const firstLine = raw
@@ -199,8 +263,25 @@ function sanitizeTitle(raw: string): string | undefined {
 	return title;
 }
 
+/** Pulisce la descrizione restituita dal modello. */
+function sanitizeDescription(raw: string): string | undefined {
+	let text = raw
+		.replace(/^["'`«»“”‘’]+|["'`«»“”‘’]+$/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
+	// Se il modello ha aggiunto un'etichetta, toglila.
+	text = text.replace(/^(descrizione|description|task|compito)\s*[:\-–—]\s*/i, "").trim();
+	if (!text) return undefined;
+	if (text.length > CONFIG.descriptionMaxChars) {
+		const cut = text.slice(0, CONFIG.descriptionMaxChars - 1);
+		const lastSpace = cut.lastIndexOf(" ");
+		text = `${(lastSpace > CONFIG.descriptionMaxChars * 0.5 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+	}
+	return text;
+}
+
 // ---------------------------------------------------------------------------
-// Generazione del titolo con il modello
+// Generazione di titolo + descrizione con il modello (una sola chiamata)
 // ---------------------------------------------------------------------------
 
 type TitleModel = ReturnType<ExtensionContext["modelRegistry"]["getAvailable"]>[number];
@@ -224,9 +305,55 @@ function pickTitleModel(ctx: ExtensionContext): TitleModel | undefined {
 	return registry.getAvailable().find((model) => registry.hasConfiguredAuth(model));
 }
 
-async function generateTitle(ctx: ExtensionContext, userText: string): Promise<string | undefined> {
+function parseTitleAndDescription(raw: string, fallbackText: string): { title?: string; description?: string } {
+	// Il modello dovrebbe rispondere con JSON: {"title": "...", "description": "..."}
+	const cleaned = raw
+		.replace(/```(?:json)?\s*/gi, "")
+		.replace(/```\s*/g, "")
+		.trim();
+	const start = cleaned.indexOf("{");
+	const end = cleaned.lastIndexOf("}");
+	if (start >= 0 && end > start) {
+		try {
+			const parsed = JSON.parse(cleaned.slice(start, end + 1)) as {
+				title?: unknown;
+				description?: unknown;
+			};
+			const title = typeof parsed.title === "string" ? sanitizeTitle(parsed.title) : undefined;
+			const description =
+				typeof parsed.description === "string" ? sanitizeDescription(parsed.description) : undefined;
+			if (title || description) return { title, description };
+		} catch {
+			// Sotto: fallback sul testo libero.
+		}
+	}
+
+	// Fallback: prova "title: ...\ndescription: ..." oppure usa il testo come titolo.
+	const lines = cleaned.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+	let title: string | undefined;
+	let description: string | undefined;
+	for (const line of lines) {
+		const m = line.match(/^(titolo|title)\s*[:\-–—]\s*(.+)$/i);
+		if (m && !title) {
+			title = sanitizeTitle(m[2]);
+			continue;
+		}
+		const d = line.match(/^(descrizione|description)\s*[:\-–—]\s*(.+)$/i);
+		if (d && !description) {
+			description = sanitizeDescription(d[2]);
+		}
+	}
+	if (!title && lines.length > 0) title = sanitizeTitle(lines[0]);
+	if (!description) description = sanitizeDescription(provisionalDescription(fallbackText));
+	return { title, description };
+}
+
+async function generateTitleAndDescription(
+	ctx: ExtensionContext,
+	userText: string,
+): Promise<{ title?: string; description?: string }> {
 	const model = pickTitleModel(ctx);
-	if (!model) return undefined;
+	if (!model) return {};
 
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), CONFIG.titleTimeoutMs);
@@ -235,13 +362,19 @@ async function generateTitle(ctx: ExtensionContext, userText: string): Promise<s
 
 	try {
 		const prompt = [
-			"Give this coding session a short title based on the user's first message.",
-			"Rules:",
+			"Describe this coding session based on the user's first message.",
+			"Reply with JSON only, no code fences, no extra text:",
+			'{"title": "...", "description": "..."}',
+			"Rules for \"title\":",
 			`- Maximum ${CONFIG.titleMaxChars} characters, 3 to 8 words.`,
 			"- Use the same language as the user's message.",
 			"- No quotes, no emoji, no trailing punctuation, no labels like 'Title:'.",
 			"- Describe the concrete task or topic.",
-			"- Reply with the title only.",
+			"Rules for \"description\":",
+			`- One or two sentences, maximum ${CONFIG.descriptionMaxChars} characters.`,
+			"- Use the same language as the user's message.",
+			"- Describe the concrete task, goal and relevant context.",
+			"- No quotes, no emoji, no labels like 'Description:'.",
 			"",
 			"<first_message>",
 			userText.slice(0, 1500),
@@ -273,10 +406,10 @@ async function generateTitle(ctx: ExtensionContext, userText: string): Promise<s
 			.map((part) => part.text)
 			.join("\n");
 
-		return sanitizeTitle(text);
+		return parseTitleAndDescription(text, userText);
 	} catch {
-		// Timeout, abort o provider senza auth: si tiene il titolo provvisorio.
-		return undefined;
+		// Timeout, abort o provider senza auth: si tengono i valori provvisori.
+		return {};
 	} finally {
 		clearTimeout(timeout);
 		ctx.signal?.removeEventListener("abort", onAbort);
@@ -284,19 +417,21 @@ async function generateTitle(ctx: ExtensionContext, userText: string): Promise<s
 }
 
 // ---------------------------------------------------------------------------
-// Componente TUI: π + titolo
+// Componenti TUI: header (logo + descrizione) e widget (titolo corto)
 // ---------------------------------------------------------------------------
 
 interface BannerState {
 	title: string;
 	hasTitle: boolean;
+	description?: string;
 }
 
-function currentState(pi: ExtensionAPI): BannerState {
+function currentState(pi: ExtensionAPI, ctx?: ExtensionContext): BannerState {
 	const name = pi.getSessionName();
 	return {
 		title: name ?? PLACEHOLDER_TITLE,
 		hasTitle: Boolean(name),
+		description: getDescription(ctx),
 	};
 }
 
@@ -317,8 +452,11 @@ function getLargeLogo(theme: Theme): string[] {
 	];
 }
 
-/** Riga con il titolo della sessione; con `withLogo` mostra il logo π in grande. */
-function makeTitleComponent(state: BannerState, theme: Theme, withLogo = false) {
+/**
+ * Header: logo + titolo corto + descrizione estesa del task (sotto il logo).
+ * La descrizione va a capo automaticamente sulla larghezza disponibile.
+ */
+function makeHeaderComponent(state: BannerState, theme: Theme) {
 	return {
 		render(width: number): string[] {
 			const title = state.hasTitle
@@ -326,15 +464,39 @@ function makeTitleComponent(state: BannerState, theme: Theme, withLogo = false) 
 				: theme.italic(theme.fg("dim", state.title));
 			const titleLine = truncateToWidth(title, width, "…");
 
-			if (!withLogo) return [titleLine];
+			const descLines: string[] = [];
+			if (state.description) {
+				const wrapped = wrapTextWithAnsi(state.description, Math.max(20, width - 2));
+				for (const line of wrapped) {
+					descLines.push(truncateToWidth(`  ${theme.fg("dim", line)}`, width, "…"));
+				}
+			}
 
 			if (CONFIG.logo === "large") {
 				const lines = getLargeLogo(theme).map((line) => truncateToWidth(line, width, "…"));
 				lines.push(`  ${titleLine}`);
+				lines.push(...descLines);
 				return lines;
 			}
 
-			return [truncateToWidth(`${theme.fg("accent", "π")}  ${title}`, width, "…")];
+			const lines = [truncateToWidth(`${theme.fg("accent", "π")}  ${title}`, width, "…")];
+			lines.push(...descLines);
+			return lines;
+		},
+		invalidate() {
+			// Il tema arriva da un Proxy "live": il contenuto si ricalcola a ogni render.
+		},
+	};
+}
+
+/** Widget: solo il titolo corto, sticky sopra l'editor. */
+function makeWidgetComponent(state: BannerState, theme: Theme) {
+	return {
+		render(width: number): string[] {
+			const title = state.hasTitle
+				? theme.bold(state.title)
+				: theme.italic(theme.fg("dim", state.title));
+			return [truncateToWidth(title, width, "…")];
 		},
 		invalidate() {
 			// Il tema arriva da un Proxy "live": il contenuto si ricalcola a ogni render.
@@ -345,13 +507,13 @@ function makeTitleComponent(state: BannerState, theme: Theme, withLogo = false) 
 /** Aggiorna header, widget e titolo del terminale in base allo stato corrente. */
 function refreshUI(pi: ExtensionAPI, ctx: ExtensionContext): void {
 	if (!ctx.hasUI) return;
-	const state = currentState(pi);
+	const state = currentState(pi, ctx);
 
 	if (ctx.mode === "tui" && CONFIG.header) {
-		ctx.ui.setHeader((_tui, theme) => makeTitleComponent(state, theme, true));
+		ctx.ui.setHeader((_tui, theme) => makeHeaderComponent(state, theme));
 	}
 	if (CONFIG.widget) {
-		ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => makeTitleComponent(state, theme), {
+		ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => makeWidgetComponent(state, theme), {
 			placement: CONFIG.widgetPlacement,
 		});
 	}
@@ -368,10 +530,17 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 	let titleInFlight = false;
 
 	/**
-	 * Raffina il titolo con una chiamata al modello.
-	 * `force` serve a /title auto, che deve funzionare anche con autoTitle=false.
+	 * Raffina titolo + descrizione con una chiamata al modello.
+	 * `force` serve a /title auto e /desc auto, che devono funzionare
+	 * anche con autoTitle=false.
+	 * Se la sessione ha già un titolo (es. impostato con /title), aggiorna
+	 * solo la descrizione per non sovrascriverlo.
 	 */
-	async function refineTitle(ctx: ExtensionContext, userText: string, force = false): Promise<void> {
+	async function refineTitleAndDescription(
+		ctx: ExtensionContext,
+		userText: string,
+		force = false,
+	): Promise<void> {
 		if (titleInFlight) return;
 		if (!force && !CONFIG.autoTitle) return;
 		if (!ctx.hasUI) return;
@@ -379,31 +548,55 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 		const expected = pi.getSessionName();
 		titleInFlight = true;
 		try {
-			const generated = await generateTitle(ctx, userText);
-			if (!generated || generated === expected) return;
+			const generated = await generateTitleAndDescription(ctx, userText);
 			// Non sovrascrivere un titolo cambiato nel frattempo (es. /title o /name).
-			if (pi.getSessionName() !== expected) return;
-			pi.setSessionName(generated);
-			refreshUI(pi, ctx);
+			if (pi.getSessionName() !== expected) {
+				if (generated.description) {
+					setDescription(generated.description, ctx);
+					refreshUI(pi, ctx);
+				}
+				return;
+			}
+			let changed = false;
+			if (generated.title && generated.title !== expected) {
+				pi.setSessionName(generated.title);
+				changed = true;
+			}
+			if (generated.description && generated.description !== getDescription(ctx)) {
+				setDescription(generated.description, ctx);
+				changed = true;
+			}
+			if (changed) refreshUI(pi, ctx);
 		} finally {
 			titleInFlight = false;
 		}
 	}
 
-	// All'avvio: mostra il titolo e, se la sessione ripresa non ha titolo, crealo.
+	// All'avvio: mostra titolo+descrizione; se la sessione ripresa non ha
+	// titolo, crealo; se ha un titolo ma non una descrizione, rigenerala.
 	pi.on("session_start", (_event, ctx) => {
 		titleInFlight = false;
+		// Ripristina la descrizione già nota per questa sessione (stesso processo).
+		const sid = getSessionId(ctx);
+		currentDescription = (sid ? descriptionBySession.get(sid) : undefined) ?? undefined;
 		refreshUI(pi, ctx);
 
-		if (!CONFIG.autoTitle || !CONFIG.autoTitleOnResume || !ctx.hasUI) return;
-		if (pi.getSessionName()) return;
-
+		if (!ctx.hasUI) return;
 		const first = readFirstUserMessage(ctx);
 		if (!first) return;
 
-		pi.setSessionName(provisionalTitle(first));
-		refreshUI(pi, ctx);
-		void refineTitle(ctx, first);
+		if (!pi.getSessionName()) {
+			if (!CONFIG.autoTitle || !CONFIG.autoTitleOnResume) return;
+			pi.setSessionName(provisionalTitle(first));
+			setDescription(provisionalDescription(first), ctx);
+			refreshUI(pi, ctx);
+			void refineTitleAndDescription(ctx, first);
+		} else if (!getDescription(ctx)) {
+			if (!CONFIG.autoTitle || !CONFIG.autoTitleOnResume) return;
+			setDescription(provisionalDescription(first), ctx);
+			refreshUI(pi, ctx);
+			void refineTitleAndDescription(ctx, first);
+		}
 	});
 
 	// Titolo cambiato (dall'estensione, da /name o da /title): aggiorna la UI.
@@ -411,16 +604,21 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 		refreshUI(pi, ctx);
 	});
 
-	// Prima che l'agente parta: assegna il titolo (provvisorio e poi raffinato).
+	// Prima che l'agente parta: assegna titolo + descrizione (provvisori e poi raffinati).
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!ctx.hasUI || !event.prompt.trim()) return;
-		if (pi.getSessionName()) return;
+		if (pi.getSessionName() && getDescription(ctx)) return;
 
-		pi.setSessionName(provisionalTitle(event.prompt));
+		if (!pi.getSessionName()) {
+			pi.setSessionName(provisionalTitle(event.prompt));
+		}
+		if (!getDescription(ctx)) {
+			setDescription(provisionalDescription(event.prompt), ctx);
+		}
 		refreshUI(pi, ctx);
 
 		if (CONFIG.autoTitle) {
-			await refineTitle(ctx, event.prompt);
+			await refineTitleAndDescription(ctx, event.prompt);
 		}
 	});
 
@@ -432,16 +630,17 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 
 	// Comando manuale: /title, /title <testo>, /title auto
 	pi.registerCommand("title", {
-		description: "Mostra o imposta il titolo della sessione (uso: /title [testo | auto])",
+		description: "Mostra o imposta il titolo corto (uso: /title [testo | auto])",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const input = args.trim();
 
 			if (!input) {
 				const current = pi.getSessionName();
+				const desc = getDescription(ctx);
 				if (ctx.hasUI) {
 					ctx.ui.notify(
 						current
-							? `Titolo sessione: ${current}`
+							? `Titolo: ${current}${desc ? `\nDescrizione: ${desc}` : ""}`
 							: "Nessun titolo impostato. Usa /title <testo> oppure /title auto.",
 						"info",
 					);
@@ -460,10 +659,15 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 					return;
 				}
 				pi.setSessionName(provisionalTitle(first));
+				setDescription(provisionalDescription(first), ctx);
 				refreshUI(pi, ctx);
-				await refineTitle(ctx, first, true);
+				await refineTitleAndDescription(ctx, first, true);
 				if (ctx.hasUI) {
-					ctx.ui.notify(`Titolo sessione: ${pi.getSessionName() ?? "—"}`, "info");
+					const desc = getDescription(ctx);
+					ctx.ui.notify(
+						`Titolo: ${pi.getSessionName() ?? "—"}${desc ? `\nDescrizione: ${desc}` : ""}`,
+						"info",
+					);
 				}
 				return;
 			}
@@ -471,6 +675,54 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 			pi.setSessionName(input);
 			if (ctx.hasUI) {
 				ctx.ui.notify(`Titolo sessione: ${pi.getSessionName() ?? input}`, "info");
+			}
+		},
+	});
+
+	// Comando manuale: /desc, /desc <testo>, /desc auto, /desc clear
+	pi.registerCommand("desc", {
+		description: "Mostra o imposta la descrizione estesa (uso: /desc [testo | auto | clear])",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			const input = args.trim();
+
+			if (!input) {
+				const desc = getDescription(ctx);
+				if (ctx.hasUI) {
+					ctx.ui.notify(desc ? `Descrizione: ${desc}` : "Nessuna descrizione. Usa /desc <testo> oppure /desc auto.", "info");
+				}
+				return;
+			}
+
+			if (input === "clear" || input === "cancella" || input === "off") {
+				setDescription(undefined, ctx);
+				refreshUI(pi, ctx);
+				if (ctx.hasUI) ctx.ui.notify("Descrizione nascosta.", "info");
+				return;
+			}
+
+			if (input === "auto" || input === "rigenera" || input === "regen") {
+				const first = readFirstUserMessage(ctx);
+				if (!first) {
+					if (ctx.hasUI) ctx.ui.notify("Nessun messaggio utente su cui basare la descrizione.", "warning");
+					return;
+				}
+				if (titleInFlight) {
+					if (ctx.hasUI) ctx.ui.notify("Generazione già in corso…", "warning");
+					return;
+				}
+				setDescription(provisionalDescription(first), ctx);
+				refreshUI(pi, ctx);
+				await refineTitleAndDescription(ctx, first, true);
+				if (ctx.hasUI) {
+					ctx.ui.notify(`Descrizione: ${getDescription(ctx) ?? "—"}`, "info");
+				}
+				return;
+			}
+
+			setDescription(sanitizeDescription(input) ?? input.slice(0, CONFIG.descriptionMaxChars), ctx);
+			refreshUI(pi, ctx);
+			if (ctx.hasUI) {
+				ctx.ui.notify(`Descrizione: ${getDescription(ctx) ?? input}`, "info");
 			}
 		},
 	});

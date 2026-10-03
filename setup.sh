@@ -5,16 +5,20 @@
 # It will:
 #   1. link every extension in ./extensions into the Pi agent directory
 #   2. install the example config files (only if not already present)
-#   3. run each extension's own setup.sh (native deps: Python, PortAudio, …)
+#   3. offer to run each extension's own setup.sh (native deps: Python, PortAudio, …)
+#      (only for extensions that actually contain a setup.sh file)
 #
 # Usage:
 #   git clone <repo> ~/pi-agent-config
-#   ~/pi-agent-config/setup.sh             # full setup
+#   ~/pi-agent-config/setup.sh             # full setup (asks per extension)
 #   ~/pi-agent-config/setup.sh --no-native # skip system/Python deps
+#   ~/pi-agent-config/setup.sh --yes       # run every extension setup without asking
 #
 # Options:
-#   --no-native   link extensions + install configs, but do NOT run the
+#   --no-native   link extensions + install configs, but do NOT offer/run the
 #                 per-extension native setup (Python venv, PortAudio, model…)
+#   -y, --yes     run every per-extension setup.sh without asking
+#                 (useful for automation)
 #   -h, --help    show this help
 set -euo pipefail
 
@@ -23,11 +27,13 @@ AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 DEST_DIR="$AGENT_DIR/extensions"
 
 SKIP_NATIVE=0
+AUTO_YES=0
 for arg in "$@"; do
   case "$arg" in
     --no-native|--skip-native) SKIP_NATIVE=1 ;;
+    -y|--yes) AUTO_YES=1 ;;
     -h|--help)
-      sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     *) printf '\033[1;33m[!]\033[0m Argomento ignorato: %s\n' "$arg" ;;
   esac
@@ -78,19 +84,53 @@ if [ -d "$SCRIPT_DIR/examples" ]; then
   done
 fi
 
-# --- 3. run each extension's native setup ----------------------------------
-if [ "$SKIP_NATIVE" -eq 0 ]; then
+# --- 3. offer each extension's native setup ----------------------------------
+# Chiede conferma solo per le estensioni che contengono davvero un setup.sh,
+# usando il nome della cartella come nome dell'estensione.
+SKIPPED_SETUPS=""
+if [ "$SKIP_NATIVE" -eq 1 ]; then
+  warn "--no-native: salto il setup delle dipendenze native"
   for s in "$SCRIPT_DIR"/extensions/*/setup.sh; do
     [ -e "$s" ] || continue
-    log "Setup dipendenze: $(basename "$(dirname "$s")")"
-    bash "$s"
+    SKIPPED_SETUPS="$SKIPPED_SETUPS $(basename "$(dirname "$s")")"
   done
 else
-  warn "--no-native: salto il setup delle dipendenze native"
+  for s in "$SCRIPT_DIR"/extensions/*/setup.sh; do
+    [ -e "$s" ] || continue
+    name="$(basename "$(dirname "$s")")"
+    answer=""
+    if [ "$AUTO_YES" -eq 1 ]; then
+      answer="y"
+    elif [ ! -t 0 ]; then
+      warn "input non interattivo: salto il setup di '$name'"
+      SKIPPED_SETUPS="$SKIPPED_SETUPS $name"
+      continue
+    else
+      printf '\033[1;34m[setup]\033[0m Vuoi impostare anche %s? (Y/n): ' "$name"
+      read -r answer || answer="n"
+    fi
+    case "${answer:-Y}" in
+      [Nn]|[Nn][Oo])
+        warn "salto il setup di '$name' (puoi lanciarlo dopo con: bash extensions/$name/setup.sh)"
+        SKIPPED_SETUPS="$SKIPPED_SETUPS $name"
+        ;;
+      *)
+        log "Setup dipendenze: $name"
+        bash "$s"
+        ;;
+    esac
+  done
 fi
 
 # --- done ------------------------------------------------------------------
 echo
+if [ -n "$SKIPPED_SETUPS" ]; then
+  warn "Setup iniziale non ancora finito: resta da completare il setup di:$SKIPPED_SETUPS"
+  for _name in $SKIPPED_SETUPS; do
+    echo "  • bash extensions/$_name/setup.sh"
+  done
+  echo
+fi
 echo -e "\033[1;32m[✓] Configurazione Pi riprodotta.\033[0m"
 echo
 echo "Prossimi passi:"
