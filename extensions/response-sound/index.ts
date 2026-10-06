@@ -218,7 +218,12 @@ function listBuiltins(): string[] {
 export default function (pi: ExtensionAPI) {
 	// Play a sound once, when the agent is truly done (agent_settled): Pi will not
 	// continue automatically, so this is the signal that the response is ready to read.
-	pi.on("agent_settled", (_event, _ctx) => {
+	// Solo in TUI: nelle esecuzioni headless (es. subprocess /btw in JSON mode)
+	// non deve suonare, altrimenti l'utente sente il suono due volte.
+	pi.on("agent_settled", (_event, ctx) => {
+		if (ctx.mode !== "tui") {
+			return;
+		}
 		const config = loadConfig();
 		if (!config.enabled) {
 			return;

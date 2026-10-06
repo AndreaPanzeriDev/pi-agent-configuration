@@ -9,7 +9,7 @@ extensions, automatic setup, and config files, in a single repo reproducible on
 | Path | What it is |
 |------|------------|
 | `extensions/voice-to-chat/` | **100% local** voice dictation. macOS → **MLX**, Linux/Windows → **faster-whisper** (CUDA when available). Cross-platform recording via `sounddevice`/PortAudio. |
-| `extensions/btw/` | Side question (`/btw`), like in Claude Code: asks the same model with the current conversation as context, no tools, single answer in an overlay panel, without disturbing the main agent. |
+| `extensions/btw/` | Side question (`/btw`): answer in an overlay panel above the current chat, without leaving the session. Fresh context (repo only, no chat history) with **all tools** — built-ins, extensions, MCP servers, skills. Same model and thinking level, ephemeral (`--no-session`). `/btw -c <question>` also includes the current conversation as reference. |
 | `extensions/pi-banner/` | Shows the session title (auto-generated from the first message) in the header, sticky line, and terminal title. `/title` command. |
 | `extensions/token-stats/` | Token and cost counts per session, model, and project, with a daily chart. `/stats`, `/stats export`, `/stats prune`, `/stats reset` commands. |
 | `extensions/response-sound/` | Plays a short sound when Pi finishes answering. `/sound` commands. Already cross-platform (`afplay`, `paplay`, …). |
