@@ -13,6 +13,7 @@ extensions, automatic setup, and config files, in a single repo reproducible on
 | `extensions/pi-banner/` | Shows the session title (auto-generated from the first message) in the header, sticky line, and terminal title. `/title` command. |
 | `extensions/token-stats/` | Token and cost counts per session, model, and project, with a daily chart. `/stats`, `/stats export`, `/stats prune`, `/stats reset` commands. |
 | `extensions/response-sound/` | Plays a short sound when Pi finishes answering. `/sound` commands. Already cross-platform (`afplay`, `paplay`, …). |
+| `extensions/daily-report/` | Day report (`/report`, `/daily`): fast table of the day sessions + AI summary of done/not-finished work, with markdown export. |
 | `setup.sh` | Reproduces the whole configuration on a new machine. |
 | `examples/` | Example config files (`settings.json`, `models.json`, `mcp.json`, `response-sound.json`, `pi-banner.json`). |
 
@@ -103,6 +104,8 @@ pi-agent-config/
 │   │   └── index.ts
 │   └── response-sound/     # answer sound (/sound)
 │       └── index.ts
+│   ├── daily-report/       # day report (/report, /daily)
+│   │   └── index.ts
 └── examples/
     ├── settings.json
     ├── models.json
