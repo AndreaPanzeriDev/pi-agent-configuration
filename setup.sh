@@ -14,8 +14,14 @@
 #   ~/pi-agent-config/setup.sh             # full setup (asks per extension)
 #   ~/pi-agent-config/setup.sh --no-native # skip system/Python deps
 #   ~/pi-agent-config/setup.sh --yes       # run every extension setup without asking
+#   ~/pi-agent-config/setup.sh --update    # pull the latest version from the
+#                                          # remote repo, re-link extensions and
+#                                          # refresh the already-installed setups
 #
 # Options:
+#   --update      fetch the newest version of this repo (git pull), re-link the
+#                 extensions and re-run the setup of every extension that is
+#                 already installed on this machine (no questions asked)
 #   --no-native   link extensions + install configs, but do NOT offer/run the
 #                 per-extension native setup (Python venv, PortAudio, model…)
 #   -y, --yes     run every per-extension setup.sh without asking
@@ -29,10 +35,12 @@ DEST_DIR="$AGENT_DIR/extensions"
 
 SKIP_NATIVE=0
 AUTO_YES=0
+DO_UPDATE=0
 for arg in "$@"; do
   case "$arg" in
     --no-native|--skip-native) SKIP_NATIVE=1 ;;
     -y|--yes) AUTO_YES=1 ;;
+    -u|--update) DO_UPDATE=1 ;;
     -h|--help)
       sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -46,6 +54,36 @@ warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
 
 log "Pi agent dir: $AGENT_DIR"
 mkdir -p "$DEST_DIR"
+
+# --- 0. optional: pull the latest version from the online repo ---------------
+# A per-extension "already installed" marker lives in the agent dir (machine
+# local, never committed), so a fresh clone still asks for everything.
+DONE_DIR="$AGENT_DIR/.setup-done"
+mkdir -p "$DONE_DIR"
+
+if [ "$DO_UPDATE" -eq 1 ]; then
+  if [ -d "$SCRIPT_DIR/.git" ] && command -v git >/dev/null 2>&1; then
+    log "Aggiornamento del repository da $(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo 'origin')…"
+    if git -C "$SCRIPT_DIR" pull --ff-only; then
+      ok "Repository aggiornato."
+    else
+      warn "git pull non riuscito (conflitti o rete assente): proseguo con la versione locale"
+    fi
+  else
+    warn "Non è un clone git (o git mancante): salto il download, uso la versione locale"
+  fi
+fi
+
+# is_voice_installed: venv + Whisper model already on this machine?
+voice_installed() {
+  local venv_dir="${VOICE_VENV_DIR:-$HOME/.pi/voice-venv}" venv_py hf_cache
+  if [ -x "$venv_dir/bin/python" ]; then venv_py="$venv_dir/bin/python"
+  elif [ -x "$venv_dir/Scripts/python.exe" ]; then venv_py="$venv_dir/Scripts/python.exe"
+  else return 1; fi
+  # faster-whisper / MLX whisper models all land in the Hugging Face cache.
+  hf_cache="${HF_HOME:-$HOME/.cache/huggingface}/hub"
+  [ -d "$hf_cache" ] && ls "$hf_cache" 2>/dev/null | grep -qi 'models--.*whisper'
+}
 
 # --- 1. link extensions ----------------------------------------------------
 log "Collegamento delle estensioni…"
@@ -100,7 +138,25 @@ else
     [ -e "$s" ] || continue
     name="$(basename "$(dirname "$s")")"
     answer=""
+
+    # Already configured on this machine (marker from a previous successful
+    # setup, or — for voice-to-chat — venv + model already present): in update
+    # mode refresh it silently, otherwise don't ask again.
+    if [ -e "$DONE_DIR/$name" ] || { [ "$name" = "voice-to-chat" ] && voice_installed; }; then
+      if [ "$DO_UPDATE" -eq 1 ]; then
+        log "Aggiornamento setup: $name"
+        bash "$s" && touch "$DONE_DIR/$name" || warn "setup di '$name' non completato"
+      else
+        ok "$name: già configurato (aggiorna con: $0 --update)"
+      fi
+      continue
+    fi
+
     if [ "$AUTO_YES" -eq 1 ]; then
+      answer="y"
+    elif [ "$DO_UPDATE" -eq 1 ]; then
+      # New extension arrived with the update: set it up without prompting.
+      log "Nuova estensione dall'aggiornamento: $name"
       answer="y"
     elif [ ! -t 0 ]; then
       warn "input non interattivo: salto il setup di '$name'"
@@ -117,7 +173,7 @@ else
         ;;
       *)
         log "Setup dipendenze: $name"
-        bash "$s"
+        if bash "$s"; then touch "$DONE_DIR/$name"; else warn "setup di '$name' non completato"; fi
         ;;
     esac
   done
