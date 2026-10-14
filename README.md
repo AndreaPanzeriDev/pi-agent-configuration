@@ -12,6 +12,7 @@ extensions, automatic setup, and config files, in a single repo reproducible on
 | `extensions/btw/` | Side question (`/btw`): answer in an overlay panel above the current chat, without leaving the session. Fresh context (repo only, no chat history) with **all tools** — built-ins, extensions, MCP servers, skills. Same model and thinking level, ephemeral (`--no-session`). `/btw -c <question>` also includes the current conversation as reference. |
 | `extensions/pi-banner/` | Shows the session title (auto-generated from the first message) in the header, sticky line, and terminal title. `/title` command. |
 | `extensions/token-stats/` | Token and cost counts per session, model, and project, with a daily chart. `/stats`, `/stats export`, `/stats prune`, `/stats reset` commands. |
+| `extensions/tok-speed/` | Replaces the footer stats line with the output tokens-per-second rate of the last assistant response, inline next to the token/cost numbers.
 | `extensions/response-sound/` | Plays a short sound when Pi finishes answering. `/sound` commands. Already cross-platform (`afplay`, `paplay`, …). |
 | `extensions/daily-report/` | Day report (`/report`, `/daily`): fast table of the day sessions + AI summary of done/not-finished work, with markdown export. |
 | `setup.sh` | Reproduces the whole configuration on a new machine. |
@@ -102,6 +103,8 @@ pi-agent-config/
 │   │   └── index.ts
 │   ├── token-stats/      # token/cost stats (/stats)
 │   │   └── index.ts
+│   ├── tok-speed/        # output tokens/sec in the footer
+│   │   └── index.ts
 │   └── response-sound/     # answer sound (/sound)
 │       └── index.ts
 │   ├── daily-report/       # day report (/report, /daily)
@@ -109,6 +112,7 @@ pi-agent-config/
 └── examples/
     ├── settings.json
     ├── models.json
+    ├── mcp.json
     ├── response-sound.json
     └── pi-banner.json
 ```
