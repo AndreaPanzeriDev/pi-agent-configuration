@@ -11,9 +11,22 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
+/** Delta event types that correspond to output tokens. */
+const OUTPUT_DELTA_TYPES = new Set(["text_delta", "thinking_delta", "toolcall_delta"]);
+
 export default function (pi: ExtensionAPI) {
 	// Set from the footer factory so event handlers can trigger a re-render.
 	let requestRender: (() => void) | undefined;
+
+	// Streaming-window timing for the assistant message currently being streamed:
+	// performance.now() of the first and most recent output-token delta.
+	let firstDeltaAt: number | undefined;
+	let lastDeltaAt: number | undefined;
+
+	// Measured tok/s per assistant message (keyed by responseId ?? timestamp), so the
+	// footer can prefer the streaming-window speed over the durationMs-based estimate.
+	const measured = new Map<string, number>();
+	const keyOf = (a: AssistantMessage) => `${a.responseId ?? "?"}:${a.timestamp}`;
 
 	const install = (ctx: ExtensionContext) => {
 		if (ctx.mode !== "tui") return;
@@ -46,7 +59,11 @@ export default function (pi: ExtensionAPI) {
 							cacheWrite += a.usage.cacheWrite;
 							cost += a.usage.cost.total;
 							if (a.durationMs && a.durationMs > 0 && a.usage.output > 0) {
-								tokPerSec = a.usage.output / (a.durationMs / 1000);
+								// Prefer the streaming-window measurement (delta-to-delta time, which excludes
+								// connection/request overhead and time-to-first-token); fall back to the
+								// durationMs estimate for messages loaded from history.
+								const streamed = measured.get(keyOf(a));
+								tokPerSec = streamed ?? a.usage.output / (a.durationMs / 1000);
 							}
 						} else if (m.role === "toolResult" && m.usage) {
 							input += m.usage.input;
@@ -115,8 +132,35 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => install(ctx));
 
+	pi.on("message_update", async (event) => {
+		// Time the actual token streaming: from the first output delta to the last one.
+		// This excludes request/connection overhead and time-to-first-token, which are
+		// part of durationMs but are not generation speed.
+		if (OUTPUT_DELTA_TYPES.has(event.assistantMessageEvent.type)) {
+			const now = performance.now();
+			if (firstDeltaAt === undefined) firstDeltaAt = now;
+			lastDeltaAt = now;
+		}
+	});
+
 	pi.on("message_end", async (event) => {
-		if (event.message.role === "assistant") requestRender?.();
+		if (event.message.role !== "assistant") return;
+		const a = event.message as AssistantMessage;
+		if (
+			a.usage?.output > 0 &&
+			firstDeltaAt !== undefined &&
+			lastDeltaAt !== undefined &&
+			lastDeltaAt > firstDeltaAt
+		) {
+			measured.set(keyOf(a), a.usage.output / ((lastDeltaAt - firstDeltaAt) / 1000));
+			if (measured.size > 200) {
+				const oldest = measured.keys().next().value;
+				if (oldest !== undefined) measured.delete(oldest);
+			}
+		}
+		firstDeltaAt = undefined;
+		lastDeltaAt = undefined;
+		requestRender?.();
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
