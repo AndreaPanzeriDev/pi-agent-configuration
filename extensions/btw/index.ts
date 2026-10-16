@@ -1,23 +1,23 @@
 /**
- * btw — side question con pieni poteri, senza mai lasciare la sessione.
+ * btw — side question with full powers, never leaving the session.
  *
- * /btw <domanda> apre un pannello overlay SOPRA la chat corrente (nessun
- * cambio di schermata, nessun fork). La domanda viene girata a un processo
- * `pi` completamente fresco e isolato:
- *   - contesto pulito: parte dalla repo (cwd corrente), NON dalla chat;
- *   - TUTTI i tool: built-in, estensioni, MCP server, skill — tutto quello
- *     che carica un pi normale è disponibile anche lì;
- *   - stesso modello e stesso thinking level della sessione corrente;
- *   - sessione effimera (--no-session): non tocca le sessioni salvate,
- *     le statistiche né il report giornaliero.
+ * /btw <question> opens an overlay panel ABOVE the current chat (no screen
+ * change, no fork). The question is sent to a completely fresh, isolated
+ * `pi` process:
+ *   - clean context: starts from the repo (current cwd), NOT from the chat;
+ *   - ALL tools: built-in, extensions, MCP servers, skills — everything a
+ *     normal pi loads is available there too;
+ *   - same model and same thinking level as the current session;
+ *   - ephemeral session (--no-session): doesn't touch saved sessions,
+ *     statistics, or the daily report.
  *
- * /btw -c <domanda>  come sopra, ma include anche il testo della
- *                    conversazione corrente nel prompt (stile Claude Code).
+ * /btw -c <question>  like above, but also includes the text of the
+ *                    current conversation in the prompt (Claude Code style).
  *
- * Il pannello mostra in streaming testo, tool in esecuzione e risultato
- * finale in Markdown. q/Esc interrompe; quando è finito Esc/Enter chiude.
+ * The panel streams text, running tools, and the final result in Markdown.
+ * q/Esc interrupts; when done, Esc/Enter closes.
  *
- * /btw senza argomenti mostra l'utilizzo.
+ * /btw without arguments shows usage.
  */
 
 import { spawn } from "node:child_process";
@@ -37,7 +37,7 @@ import {
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
 
-// ─────────────────────────────── Stato ────────────────────────────────
+// ─────────────────────────────── State ───────────────────────────────
 
 type BtwPhase = "running" | "done" | "aborted" | "error";
 
@@ -127,7 +127,7 @@ function formatToolCall(toolName: string, args: Record<string, unknown>): string
 			const rawPath = (args.file_path || args.path || "...") as string;
 			const content = (args.content || "") as string;
 			const lines = content.split("\n").length;
-			return `write ${shortenPath(rawPath)}${lines > 1 ? ` (${lines} righe)` : ""}`;
+			return `write ${shortenPath(rawPath)}${lines > 1 ? ` (${lines} lines)` : ""}`;
 		}
 		case "edit": {
 			const rawPath = (args.file_path || args.path || "...") as string;
@@ -147,7 +147,7 @@ function formatToolCall(toolName: string, args: Record<string, unknown>): string
 	}
 }
 
-// ─────────────────────── Contesto conversazione (-c) ──────────────────
+// ─────────────────────── Conversation context (-c) ──────────────────
 
 type ContentBlock = { type?: string; text?: string; name?: string; arguments?: Record<string, unknown> };
 type SessionEntry = { type: string; message?: { role?: string; content?: unknown } };
@@ -185,13 +185,13 @@ function buildConversationContext(entries: SessionEntry[]): string {
 		if (role !== "user" && role !== "assistant") continue;
 		const text = extractTextParts(entry.message.content).join("\n").trim();
 		const lines: string[] = [];
-		if (text) lines.push(`${role === "user" ? "Utente" : "Assistente"}: ${text}`);
+		if (text) lines.push(`${role === "user" ? "User" : "Assistant"}: ${text}`);
 		if (role === "assistant") lines.push(...extractToolCallLines(entry.message.content));
 		if (lines.length > 0) sections.push(lines.join("\n"));
 	}
 	let context = sections.join("\n\n").trim();
 	if (context.length > CONTEXT_CHAR_CAP) {
-		context = `[…contesto troncato: mostro solo la parte finale…]\n\n${context.slice(-CONTEXT_CHAR_CAP)}`;
+		context = `[…context truncated: showing only the last part…]\n\n${context.slice(-CONTEXT_CHAR_CAP)}`;
 	}
 	return context;
 }
@@ -229,7 +229,7 @@ function killSoon(proc: ReturnType<typeof spawn>): void {
 		try {
 			proc.kill("SIGKILL");
 		} catch {
-			/* già morto */
+			/* already dead */
 		}
 	}, 2000).unref?.();
 }
@@ -240,8 +240,8 @@ interface BtwRun {
 }
 
 /**
- * Lancia `pi --mode json` e aggiorna `state` man mano che arrivano gli
- * eventi JSONL. `schedule()` è la callback di invalidazione dell'overlay.
+ * Run `pi --mode json` and update `state` as JSONL events arrive. `schedule()`
+ * is the overlay invalidation callback.
  */
 function runBtw(state: BtwState, argv: string[], cwd: string, schedule: () => void): BtwRun {
 	let proc: ReturnType<typeof spawn> | undefined;
@@ -359,7 +359,7 @@ function runBtw(state: BtwState, argv: string[], cwd: string, schedule: () => vo
 				state.phase = ok ? "done" : "error";
 				if (!ok && !state.errorMessage) {
 					state.errorMessage =
-						state.stderr.trim() || `processo pi terminato con exit code ${code} (stop: ${state.stopReason})`;
+						state.stderr.trim() || `pi process finished with exit code ${code} (stop: ${state.stopReason})`;
 				}
 			}
 			activeProcs.delete(child);
@@ -429,7 +429,7 @@ class BtwOverlay extends Container {
 		this.rebuild();
 	}
 
-	/** Aggiornamenti throttled dal runner. */
+	/** Throttled updates from the runner. */
 	schedule = (): void => {
 		if (this.pendingTimer || this.finished) return;
 		this.pendingTimer = setTimeout(() => {
@@ -439,7 +439,7 @@ class BtwOverlay extends Container {
 		this.pendingTimer.unref?.();
 	};
 
-	/** Redraw immediato (fine lavoro). */
+	/** Immediate redraw (end of work). */
 	flush = (): void => {
 		if (this.finished) return;
 		if (this.pendingTimer) {
@@ -455,7 +455,7 @@ class BtwOverlay extends Container {
 
 		const title = state.phase === "running" ? "btw · side question" : "btw";
 		const qPreview = truncateToWidth(state.question.replace(/\s+/g, " "), 110);
-		this.header.setText(`${title}${state.withContext ? "  (+contesto chat)" : ""}\n${qPreview}`);
+		this.header.setText(`${title}${state.withContext ? "  (+chat context)" : ""}\n${qPreview}`);
 
 		this.content.clear();
 		if (state.items.length === 0 && !state.liveText.trim() && state.phase === "running") {
@@ -468,7 +468,7 @@ class BtwOverlay extends Container {
 				const icon = item.isError ? "✗" : "✓";
 				this.content.addChild(new Text(`→ ${icon} ${item.label}`, 1, 0));
 			}
-			// Separatore tra i blocchi per leggibilità
+			// Separator between blocks for readability
 			this.content.addChild(new Text("", 0, 0));
 		}
 		if (state.liveText.trim()) {
@@ -484,10 +484,10 @@ class BtwOverlay extends Container {
 		} else {
 			const line =
 				state.phase === "done"
-					? `✓ completato · ${formatUsage(state.usage, state.model)}`
+					? `✓ done · ${formatUsage(state.usage, state.model)}`
 					: state.phase === "aborted"
 						? "⏹ interrotto"
-						: `✗ errore: ${state.errorMessage || state.stopReason || "sconosciuto"}`;
+						: `✗ error: ${state.errorMessage || state.stopReason || "unknown"}`;
 			this.statusText.setText(line);
 			this.footer.setText("Esc/Enter chiudi · ↑↓ scorri");
 		}
@@ -548,10 +548,10 @@ class BtwOverlay extends Container {
 	}
 }
 
-// ─────────────────────────── Estensione ───────────────────────────────
+// ─────────────────────────── Extension ──────────────────────────────
 
 export default function (pi: ExtensionAPI) {
-	// Se la sessione principale si chiude, non lasciare processi btw orfani.
+	// If the main session closes, don't leave orphaned btw processes.
 	pi.on("session_shutdown", () => {
 		for (const proc of activeProcs) {
 			if (!proc.killed) killSoon(proc);
@@ -560,14 +560,14 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("btw", {
-		description: "Side question in overlay: contesto fresco (repo) + tutti i tool. -c include la chat corrente",
+		description: "Side question in overlay: fresh context (repo) + all tools. -c includes the current chat",
 		handler: async (args, ctx) => {
 			if (ctx.mode !== "tui") {
-				ctx.ui.notify("/btw richiede la modalità interattiva (TUI)", "error");
+				ctx.ui.notify("/btw requires interactive mode (TUI)", "error");
 				return;
 			}
 
-			// Parsing argomenti
+			// Argument parsing
 			let rest = args.trim();
 			let withContext = false;
 			if (/^(-c|--chat)(\s|$)/.test(rest)) {
@@ -577,24 +577,24 @@ export default function (pi: ExtensionAPI) {
 			const question = rest.trim();
 			if (!question) {
 				ctx.ui.notify(
-					"Utilizzo: /btw <domanda> — oppure /btw -c <domanda> per includere anche la conversazione corrente",
+					"Usage: /btw <question> — or /btw -c <question> to also include the current conversation",
 					"warning",
 				);
 				return;
 			}
 
-			// Prompt finale per il processo laterale
+			// Final prompt for the side process
 			let prompt = `[Side question via /btw]\n\n${question}`;
 			if (withContext) {
 				const branch = ctx.sessionManager.getBranch() as unknown as SessionEntry[];
 				const conversation = buildConversationContext(branch);
 				if (conversation) {
-					prompt = `[Contesto della conversazione corrente, solo come riferimento — la domanda vera è alla fine.]\n\n<conversazione>\n${conversation}\n</conversazione>\n\n---\n\nDomanda: ${question}`;
+					prompt = `[Current conversation context, for reference only — the actual question is at the end.]\n\n<conversation>\n${conversation}\n</conversation>\n\n---\n\nQuestion: ${question}`;
 				}
 			}
 
-			// Processo pi laterale: contesto fresco, tutti i tool (estensioni e
-			// MCP comprese), stesso modello e thinking level della sessione.
+			// Side pi process: fresh context, all tools (extensions and
+			// MCP included), same model and thinking level as the session.
 			const argv: string[] = ["--mode", "json", "--no-session", "--append-system-prompt", BTW_SYSTEM_PROMPT];
 			if (ctx.model) argv.push("--model", `${ctx.model.provider}/${ctx.model.id}`);
 			if (ctx.thinkingLevel) argv.push("--thinking", String(ctx.thinkingLevel));

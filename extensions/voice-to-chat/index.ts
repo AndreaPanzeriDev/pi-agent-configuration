@@ -114,8 +114,8 @@ function render(ctx: ExtensionContext) {
   } else {
     // transcribing — brief spinner, no audio to visualize
     const spin = SPINNER[frame % SPINNER.length];
-    ctx.ui.setStatus("voice", "✍ trascrizione");
-    ctx.ui.setWidget("voice", [`${spin} ✍ trascrivo…`]);
+    ctx.ui.setStatus("voice", "✍ transcribing");
+    ctx.ui.setWidget("voice", [`${spin} ✍ transcribing…`]);
   }
 }
 
@@ -143,11 +143,11 @@ function putInEditor(ctx: ExtensionContext, text: string) {
     const combined = existing.trim() ? `${existing.trimEnd()} ${text}` : text;
     ctx.ui.setEditorText(combined);
     ctx.ui.notify(
-      "Voice-to-chat: trascrizione pronta — premi Invio per inviare",
+      "Voice-to-chat: transcription ready — press Enter to send",
       "success",
     );
   } catch (e) {
-    ctx.ui.notify(`Voice-to-chat: impossibile scrivere nell'editor: ${e}`, "error");
+    ctx.ui.notify(`Voice-to-chat: unable to write to the editor: ${e}`, "error");
   }
 }
 
@@ -207,23 +207,23 @@ function startRecording(ctx: ExtensionContext) {
         // The child crashed (e.g. PortAudio missing, model unavailable).
         const hint = errorHint();
         ctx.ui.notify(
-          `Voice-to-chat: ${hint || "errore durante la registrazione"}`,
+          `Voice-to-chat: ${hint || "error during recording"}`,
           "error",
         );
       } else if (wasTranscribing) {
         const hint = readLogHint();
-        ctx.ui.notify(`Voice-to-chat: nessun testo trascritto${hint}`, "warning");
+        ctx.ui.notify(`Voice-to-chat: no transcribed text${hint}`, "warning");
       } else {
         ctx.ui.notify(
-          "Voice-to-chat: registrazione terminata senza testo " +
-            "(microfono muto o durata massima raggiunta)",
+          "Voice-to-chat: recording ended without text " +
+            "(silent microphone or max duration reached)",
           "error",
         );
       }
     } catch {
       // Never let a timer callback throw: an uncaught error would kill pi.
       reset(ctx);
-      ctx.ui.notify("Voice-to-chat: errore interno", "error");
+      ctx.ui.notify("Voice-to-chat: internal error", "error");
     }
   }, 120);
 }
@@ -246,12 +246,12 @@ function stopAndTranscribe(ctx: ExtensionContext) {
   proc?.kill("SIGINT"); // graceful: voice.py finalizes and transcribes
   state = "transcribing";
   startedAt = Date.now();
-  ctx.ui.notify("Voice-to-chat: registrazione fermata, trascrivo…", "info");
+  ctx.ui.notify("Voice-to-chat: recording stopped, transcribing…", "info");
 }
 
 export default function (pi: ExtensionAPI) {
   pi.registerShortcut("ctrl+shift+m", {
-    description: "Voice-to-chat: avvia/ferma la registrazione (poi trascrive)",
+    description: "Voice-to-chat: start/stop recording (then transcribes)",
     handler: async (ctx: ExtensionContext) => {
       try {
         if (state === "idle") {
@@ -263,11 +263,11 @@ export default function (pi: ExtensionAPI) {
           proc?.kill("SIGTERM");
           rmSync(resultFile, { force: true });
           reset(ctx);
-          ctx.ui.notify("Voice-to-chat: annullato", "warning");
+          ctx.ui.notify("Voice-to-chat: cancelled", "warning");
         }
       } catch (e) {
         reset(ctx);
-        ctx.ui.notify(`Voice-to-chat: errore: ${e}`, "error");
+        ctx.ui.notify(`Voice-to-chat: error: ${e}`, "error");
       }
     },
   });

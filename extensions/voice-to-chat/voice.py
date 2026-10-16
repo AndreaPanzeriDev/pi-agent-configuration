@@ -189,7 +189,7 @@ def record_audio(rate, max_duration):
             f"#{i} {_dev_get(dev, 'name', '?')} "
             f"(in={_dev_get(dev, 'max_input_channels', 0)})"
             for i, dev in enumerate(devices)
-        ) or "(nessuno)"
+        ) or "(none)"
         print(
             "[voice] no audio input device found. "
             f"Devices: {available}. "

@@ -38,7 +38,7 @@ pi -p "/report export yesterday"  # save yesterday's report-YYYY-MM-DD.md
 ## Setup
 
 ```bash
-cd ~/Documents/Progetti/pi-agent-configuration && ./setup.sh
+cd ~/pi-agent-config && ./setup.sh
 # then inside pi:
 #   /reload
 ```

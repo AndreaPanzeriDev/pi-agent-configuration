@@ -51,14 +51,14 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   elif command -v python >/dev/null 2>&1; then
     PYTHON_BIN="python"
   else
-    die "Python 3 non trovato. Installa Python 3.10+ (macOS: brew install python; Ubuntu: sudo apt install python3 python3-venv) e riprova."
+    die "Python 3 not found. Install Python 3.10+ (macOS: brew install python; Ubuntu: sudo apt install python3 python3-venv) and try again."
   fi
 fi
 
 MODEL="${MODEL:-large-v3-turbo}"
 export VOICE_MODEL="$MODEL"
 
-log "Piattaforma: $PLATFORM  •  backend: $BACKEND  •  modello: $MODEL"
+log "Platform: $PLATFORM  •  backend: $BACKEND  •  model: $MODEL"
 
 # --- 1. create the venv -----------------------------------------------------
 # The venv is machine-local (NOT committed to git). Default to the conventional
@@ -70,25 +70,25 @@ else
   VENV_PY="$VENV_DIR/bin/python"
 fi
 
-log "Ambiente virtuale in: $VENV_DIR"
+log "Virtual environment in: $VENV_DIR"
 if [ ! -x "$VENV_PY" ]; then
   "$PYTHON_BIN" -m venv "$VENV_DIR" ||
-    die "Impossibile creare il venv. Su Ubuntu installa 'python3-venv' (sudo apt install python3-venv)."
+    die "Unable to create the venv. On Ubuntu install 'python3-venv' (sudo apt install python3-venv)."
 fi
-[ -x "$VENV_PY" ] || die "Interprete del venv non trovato in $VENV_PY"
+[ -x "$VENV_PY" ] || die "venv interpreter not found in $VENV_PY"
 "$VENV_PY" --version
 
 # Some venv creators (e.g. `uv venv`) do not install pip: bootstrap it.
 if ! "$VENV_PY" -m pip --version >/dev/null 2>&1; then
-  log "pip assente nell'ambiente virtuale: lo installo…"
+  log "pip not found in the virtual environment: installing it…"
   "$VENV_PY" -m ensurepip --upgrade >/dev/null 2>&1 || true
 fi
 if ! "$VENV_PY" -m pip --version >/dev/null 2>&1; then
-  die "pip non disponibile in $VENV_DIR. Elimina il venv (rm -rf \"$VENV_DIR\") e riprova."
+  die "pip not available in $VENV_DIR. Remove the venv (rm -rf \"$VENV_DIR\") and try again."
 fi
 
 # --- 2. install Python packages ---------------------------------------------
-log "Installazione delle dipendenze Python…"
+log "Installing Python dependencies…"
 "$VENV_PY" -m pip install --upgrade pip >/dev/null
 
 if [ "$BACKEND" = "mlx" ]; then
@@ -98,69 +98,69 @@ else
   # Linux/Windows: faster-whisper (+ PyTorch for CUDA on NVIDIA GPUs).
   "$VENV_PY" -m pip install faster-whisper torch sounddevice
 fi
-ok "Dipendenze Python installate."
+ok "Python dependencies installed."
 
 # --- 3. install system libraries (PortAudio, and ffmpeg on macOS) -----------
 if [ "$BACKEND" = "mlx" ]; then
   # mlx-whisper shells out to ffmpeg to decode the recorded audio, and
   # sounddevice needs PortAudio to record from the microphone.
   if command -v brew >/dev/null 2>&1; then
-    log "Installazione di portaudio e ffmpeg tramite Homebrew…"
+    log "Installing portaudio and ffmpeg via Homebrew…"
     brew list portaudio >/dev/null 2>&1 || brew install portaudio
     brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
     ok "PortAudio e ffmpeg installati."
   else
-    warn "Homebrew non trovato. Installa https://brew.sh e poi:"
+    warn "Homebrew not found. Install https://brew.sh and then:"
     warn "  brew install portaudio ffmpeg"
   fi
 elif command -v apt-get >/dev/null 2>&1; then
-  log "Installazione di PortAudio tramite apt…"
+  log "Installing PortAudio via apt…"
   if sudo -v; then
     sudo apt-get update -qq
     sudo apt-get install -y libportaudio2
-    ok "PortAudio installato."
+    ok "PortAudio installed."
   else
-    warn "sudo richiesto per 'apt-get install libportaudio2'. Fallo quando puoi:"
+    warn "sudo required for 'apt-get install libportaudio2'. Run it when you can:"
     warn "    sudo apt-get update && sudo apt-get install -y libportaudio2"
   fi
 elif command -v brew >/dev/null 2>&1; then
-  log "Installazione di PortAudio tramite Homebrew…"
+  log "Installing PortAudio via Homebrew…"
   brew list portaudio >/dev/null 2>&1 || brew install portaudio
-  ok "PortAudio installato."
+  ok "PortAudio installed."
 else
-  warn "Gestore pacchetti non riconosciuto. Installa PortAudio manualmente:"
+  warn "Unrecognized package manager. Install PortAudio manually:"
   warn "  • macOS:     brew install portaudio ffmpeg"
   warn "  • Linux:     sudo apt-get install -y libportaudio2"
   warn "  • Windows:   conda install -c conda-forge portaudio"
 fi
 
 # --- 4. download the model --------------------------------------------------
-log "Scaricamento del modello '$MODEL'…"
+log "Downloading the '$MODEL' model…"
 if [ "$BACKEND" = "mlx" ]; then
   # `mlx_whisper` has no download_model() helper: resolve the user-friendly
   # name to its mlx-community repo and fetch it with huggingface_hub.
   MODEL_REPO="$("$VENV_PY" voice_models.py "$MODEL")"
   "$VENV_PY" -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$MODEL_REPO')"
-  ok "Modello '$MODEL_REPO' pronto."
+  ok "Model '$MODEL_REPO' is ready."
 else
   # faster-whisper downloads the model lazily on first use; here we force it so
   # setup.sh clearly verifies the download works end-to-end.
   "$VENV_PY" -c "from faster_whisper import WhisperModel; WhisperModel('$MODEL')"
-  ok "Modello pronto."
+  ok "Model is ready."
 fi
 
 # --- done -------------------------------------------------------------------
 echo
-echo -e "\033[1;32m[✓] Tutto pronto!\033[0m"
+echo -e "\033[1;32m[✓] All set!\033[0m"
 echo
-echo "Prossimi passi:"
-echo "  • Trascrivi un file di test:"
-echo "      $VENV_PY voice.py --wav tua_registrazione.wav"
-echo "  • In pi, carica l'estensione (se già aperta):  /reload"
-echo "  • Premi  Ctrl+Shift+M  per dettare a voce."
+echo "Next steps:"
+echo "  • Transcribe a test file:"
+echo "      $VENV_PY voice.py --wav your_recording.wav"
+echo "  • In pi, load the extension (if already open):  /reload"
+echo "  • Press  Ctrl+Shift+M  to speak."
 echo
-echo "Variabili utili (opzionali):"
-echo "  VOICE_DEVICE=cuda|cpu|mps      (default: cuda su Linux, mps su Mac)"
+echo "Useful variables (optional):"
+echo "  VOICE_DEVICE=cuda|cpu|mps      (default: cuda on Linux, mps on Mac)"
 echo "  VOICE_LANGUAGE=italian         (default: auto)"
-echo "  VOICE_PYTHON=/percorso/python  (sovrascrive l'interprete usato)"
+echo "  VOICE_PYTHON=/path/to/python   (overrides the interpreter used)"
 echo

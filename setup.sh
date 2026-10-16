@@ -44,7 +44,7 @@ for arg in "$@"; do
     -h|--help)
       sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
-    *) printf '\033[1;33m[!]\033[0m Argomento ignorato: %s\n' "$arg" ;;
+    *) printf '\033[1;33m[!]\033[0m Ignored argument: %s\n' "$arg" ;;
   esac
 done
 
@@ -63,14 +63,14 @@ mkdir -p "$DONE_DIR"
 
 if [ "$DO_UPDATE" -eq 1 ]; then
   if [ -d "$SCRIPT_DIR/.git" ] && command -v git >/dev/null 2>&1; then
-    log "Aggiornamento del repository da $(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo 'origin')…"
+    log "Updating repository from $(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo 'origin')…"
     if git -C "$SCRIPT_DIR" pull --ff-only; then
-      ok "Repository aggiornato."
+      ok "Repository updated."
     else
-      warn "git pull non riuscito (conflitti o rete assente): proseguo con la versione locale"
+      warn "git pull failed (conflicts or no network): continuing with the local version"
     fi
   else
-    warn "Non è un clone git (o git mancante): salto il download, uso la versione locale"
+    warn "Not a git clone (or git is missing): skipping the update, using the local version"
   fi
 fi
 
@@ -86,7 +86,7 @@ voice_installed() {
 }
 
 # --- 1. link extensions ----------------------------------------------------
-log "Collegamento delle estensioni…"
+log "Linking extensions…"
 for src in "$SCRIPT_DIR"/extensions/*; do
   [ -e "$src" ] || continue
   name="$(basename "$src")"
@@ -94,41 +94,41 @@ for src in "$SCRIPT_DIR"/extensions/*; do
 
   # Already the same file (e.g. symlink) -> nothing to do.
   if [ -e "$target" ] && [ "$target" -ef "$src" ]; then
-    ok "già presente: $name"
+    ok "already present: $name"
     continue
   fi
 
   # Back up an existing, different entry so nothing is lost.
   if [ -e "$target" ] || [ -L "$target" ]; then
-    warn "esiste già '$name': ne faccio un backup (*.bak)"
+    warn "'$name' already exists: making a backup (*.bak)"
     mv "$target" "$target.bak.$(date +%s)"
   fi
 
   ln -s "$src" "$target"
-  ok "collegata: $name -> $src"
+  ok "linked: $name -> $src"
 done
 
 # --- 2. install example config files (never overwrite) ---------------------
 if [ -d "$SCRIPT_DIR/examples" ]; then
-  log "File di configurazione…"
+  log "Config files…"
   for f in "$SCRIPT_DIR"/examples/*.json; do
     [ -e "$f" ] || continue
     base="$(basename "$f")"
     if [ -e "$AGENT_DIR/$base" ]; then
-      warn "config esistente, non tocco: $base"
+      warn "config already exists, leaving it as is: $base"
     else
       cp "$f" "$AGENT_DIR/$base"
-      ok "config installata: $base"
+      ok "config installed: $base"
     fi
   done
 fi
 
 # --- 3. offer each extension's native setup ----------------------------------
-# Chiede conferma solo per le estensioni che contengono davvero un setup.sh,
-# usando il nome della cartella come nome dell'estensione.
+# Ask for confirmation only for extensions that actually contain a setup.sh,
+# using the folder name as the extension name.
 SKIPPED_SETUPS=""
 if [ "$SKIP_NATIVE" -eq 1 ]; then
-  warn "--no-native: salto il setup delle dipendenze native"
+  warn "--no-native: skipping native dependency setup"
   for s in "$SCRIPT_DIR"/extensions/*/setup.sh; do
     [ -e "$s" ] || continue
     SKIPPED_SETUPS="$SKIPPED_SETUPS $(basename "$(dirname "$s")")"
@@ -144,10 +144,10 @@ else
     # mode refresh it silently, otherwise don't ask again.
     if [ -e "$DONE_DIR/$name" ] || { [ "$name" = "voice-to-chat" ] && voice_installed; }; then
       if [ "$DO_UPDATE" -eq 1 ]; then
-        log "Aggiornamento setup: $name"
-        bash "$s" && touch "$DONE_DIR/$name" || warn "setup di '$name' non completato"
+        log "Updating setup: $name"
+        bash "$s" && touch "$DONE_DIR/$name" || warn "setup of '$name' not completed"
       else
-        ok "$name: già configurato (aggiorna con: $0 --update)"
+        ok "$name: already configured (update with: $0 --update)"
       fi
       continue
     fi
@@ -156,24 +156,24 @@ else
       answer="y"
     elif [ "$DO_UPDATE" -eq 1 ]; then
       # New extension arrived with the update: set it up without prompting.
-      log "Nuova estensione dall'aggiornamento: $name"
+      log "New extension from the update: $name"
       answer="y"
     elif [ ! -t 0 ]; then
-      warn "input non interattivo: salto il setup di '$name'"
+      warn "non-interactive input: skipping setup of '$name'"
       SKIPPED_SETUPS="$SKIPPED_SETUPS $name"
       continue
     else
-      printf '\033[1;34m[setup]\033[0m Vuoi impostare anche %s? (Y/n): ' "$name"
+      printf '\033[1;34m[setup]\033[0m Do you want to set up %s too? (Y/n): ' "$name"
       read -r answer || answer="n"
     fi
     case "${answer:-Y}" in
       [Nn]|[Nn][Oo])
-        warn "salto il setup di '$name' (puoi lanciarlo dopo con: bash extensions/$name/setup.sh)"
+        warn "skipping setup of '$name' (you can run it later with: bash extensions/$name/setup.sh)"
         SKIPPED_SETUPS="$SKIPPED_SETUPS $name"
         ;;
       *)
-        log "Setup dipendenze: $name"
-        if bash "$s"; then touch "$DONE_DIR/$name"; else warn "setup di '$name' non completato"; fi
+        log "Setting up dependencies: $name"
+        if bash "$s"; then touch "$DONE_DIR/$name"; else warn "setup of '$name' not completed"; fi
         ;;
     esac
   done
@@ -181,27 +181,27 @@ fi
 
 # --- 4. validate MCP servers (downloads Playwright Chromium once) ---------------
 if command -v pi >/dev/null 2>&1 && [ -e "$AGENT_DIR/mcp.json" ]; then
-  log "Verifica dei server MCP (al primo avvio scarica Chromium, serve rete)…"
+  log "Checking MCP servers (first run downloads Chromium, needs network)…"
   if pi mcp list; then
-    ok "server MCP raggiungibili"
+    ok "MCP servers reachable"
   else
-    warn "'pi mcp list' ha segnalato problemi (vedi sopra); riprova con la rete attiva"
+    warn "'pi mcp list' reported problems (see above); retry with network enabled"
   fi
 fi
 
 # --- done ------------------------------------------------------------------
 echo
 if [ -n "$SKIPPED_SETUPS" ]; then
-  warn "Setup iniziale non ancora finito: resta da completare il setup di:$SKIPPED_SETUPS"
+  warn "Initial setup not yet finished: still need to complete the setup of:$SKIPPED_SETUPS"
   for _name in $SKIPPED_SETUPS; do
     echo "  • bash extensions/$_name/setup.sh"
   done
   echo
 fi
-echo -e "\033[1;32m[✓] Configurazione Pi riprodotta.\033[0m"
+echo -e "\033[1;32m[✓] Pi configuration reproduced.\033[0m"
 echo
-echo "Prossimi passi:"
-echo "  • Autentica i provider:  pi   →   /login   (le chiavi in auth.json non sono versionate)"
-echo "  • In pi:  /reload   per caricare le estensioni"
-echo "  • Dettatura vocale:  Ctrl+Shift+M"
+echo "Next steps:"
+echo "  • Log in to the providers:  pi   →   /login   (the keys in auth.json are not versioned)"
+echo "  • In pi:  /reload   to load the extensions"
+echo "  • Voice dictation:  Ctrl+Shift+M"
 echo

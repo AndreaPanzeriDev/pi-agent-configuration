@@ -1,54 +1,53 @@
 /**
- * pi-banner — estensione per Pi
+ * pi-banner — extension for Pi
  * ==============================
- * Mostra, a ogni sessione, il titolo e il testo originale:
+ * Shows, on every session, the title and the original text:
  *
- *   Header (sotto il logo π): testo originale completo del primo
- *   messaggio dell'utente, senza troncamenti, mandato a capo
- *   sulla larghezza disponibile.
+ *   Header (under the π logo): the full original text of the first
+ *   user message, without truncation, wrapped to the available width.
  *
- *   Widget (riga sticky sopra l'editor): descrizione corta generata
- *   dall'AI in uso (stesso modello della sessione, con vision per gli
- *   screenshot allegati), sempre mostrata per intero con wrap su piu'
- *   righe invece di troncare con ….
+ *   Widget (sticky line above the editor): a short description generated
+ *   by the AI in use (same model as the session, with vision for the
+ *   attached screenshots), always shown in full with wrapping instead of
+ *   truncating with ….
  *
- * Il titolo viene generato automaticamente dal primo messaggio dell'utente
- * *prima* che il modello inizi a rispondere, ed è salvato nella sessione
- * (session_info): lo ritrovi anche riaprendo la sessione più tardi.
- * La descrizione invece vive in memoria (rigenerata dal primo messaggio
- * quando riapri la sessione).
+ * The title is generated automatically from the user's first message
+ * *before* the model starts replying, and is saved in the session
+ * (session_info): you'll find it again by reopening the session later.
+ * The description instead lives in memory (regenerated from the first
+ * message when you reopen the session).
  *
- * La descrizione compare:
- *   1. come header in alto nella chat, sotto il logo π (mode TUI);
- *   2. il titolo corto resta come riga sticky sopra l'editor;
- *   3. nel titolo della finestra/terminale (titolo corto).
+ * The description appears:
+ *   1. as a header at the top of the chat, under the π logo (TUI mode);
+ *   2. the short title stays as a sticky line above the editor;
+ *   3. in the window/terminal title (short title).
  *
- * Il logo π dell'header può essere grande (ASCII art su più righe)
- * oppure piccolo (simbolo su una riga) tramite la chiave "logo".
+ * The π logo in the header can be large (ASCII art on multiple lines)
+ * or small (a symbol on one line) via the "logo" key.
  *
- * Configurazione: ~/.pi/agent/pi-banner.json
+ * Configuration: ~/.pi/agent/pi-banner.json
  *   {
- *     "header": true,              // π + descrizione in alto nella chat
- *     "widget": true,              // titolo corto sticky sopra l'editor
+ *     "header": true,              // π + description at the top of the chat
+ *     "widget": true,              // short title sticky above the editor
  *     "widgetPlacement": "aboveEditor", // "aboveEditor" | "belowEditor"
- *     "terminalTitle": true,       // aggiorna il titolo del terminale
- *     "autoTitle": true,           // genera titolo+descrizione dal primo messaggio
- *     "autoTitleOnResume": true,   // genera titolo/descrizione riaprendo sessioni senza nome
- *     "titleModel": "",            // "provider/model" per titolo/descrizione; "" = modello corrente
- *     "titleMaxChars": 64,         // lunghezza massima del titolo corto
- *     "descriptionMaxChars": 280,  // lunghezza massima della descrizione estesa
- *     "titleMaxTokens": 256,       // token massimi per la generazione (titolo+descrizione)
- *     "titleTimeoutMs": 20000      // timeout della generazione
+ *     "terminalTitle": true,       // update the terminal title
+ *     "autoTitle": true,           // generate title+description from the first message
+ *     "autoTitleOnResume": true,   // generate title/description when reopening unnamed sessions
+ *     "titleModel": "",            // "provider/model" for title/description; "" = current model
+ *     "titleMaxChars": 64,         // max length of the short title
+ *     "descriptionMaxChars": 280,  // max length of the extended description
+ *     "titleMaxTokens": 256,       // max tokens for generation (title+description)
+ *     "titleTimeoutMs": 20000      // timeout for generation
  *   }
  *
- * Comandi:
- *   /title              mostra il titolo corrente (e la descrizione)
- *   /title <testo>      imposta il titolo a mano
- *   /title auto         rigenera titolo+descrizione dal primo messaggio
- *   /desc               mostra la descrizione corrente
- *   /desc <testo>       imposta la descrizione a mano
- *   /desc auto          rigenera la descrizione dal primo messaggio
- *   /desc clear         nasconde la descrizione
+ * Commands:
+ *   /title              shows the current title (and description)
+ *   /title <text>       sets the title by hand
+ *   /title auto         regenerates title+description from the first message
+ *   /desc               shows the current description
+ *   /desc <text>        sets the description by hand
+ *   /desc auto          regenerates the description from the first message
+ *   /desc clear         hides the description
  */
 
 import { randomUUID } from "node:crypto";
@@ -65,7 +64,7 @@ import {
 import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 // ---------------------------------------------------------------------------
-// Configurazione
+// Configuration
 // ---------------------------------------------------------------------------
 
 interface BannerConfig {
@@ -132,7 +131,7 @@ function loadConfig(): BannerConfig {
 			config.titleTimeoutMs = Math.min(120000, Math.max(3000, Math.round(raw.titleTimeoutMs)));
 		}
 	} catch {
-		// File mancante o non valido: usa i valori di default.
+		// Missing or invalid file: use the default values.
 	}
 
 	return config;
@@ -141,17 +140,17 @@ function loadConfig(): BannerConfig {
 const CONFIG = loadConfig();
 
 const WIDGET_KEY = "pi-banner-title";
-const PLACEHOLDER_TITLE = "sessione senza titolo";
+const PLACEHOLDER_TITLE = "session without title";
 
 // ---------------------------------------------------------------------------
-// Stato della descrizione (in memoria, per sessione)
+// Description state (in memory, per session)
 // ---------------------------------------------------------------------------
 
 const descriptionBySession = new Map<string, string>();
 let currentDescription: string | undefined;
 
-// Testo originale completo del primo messaggio (in memoria, per sessione).
-// L'header sotto il logo mostra questo testo, senza limiti di lunghezza.
+// Full original text of the first message (in memory, per session).
+// The header under the logo shows this text, with no length limit.
 const originalBySession = new Map<string, string>();
 let currentOriginal: string | undefined;
 
@@ -205,7 +204,7 @@ function setOriginal(text: string | undefined, ctx?: ExtensionContext): void {
 }
 
 // ---------------------------------------------------------------------------
-// Utilita' su testi e messaggi
+// Helpers for text and messages
 // ---------------------------------------------------------------------------
 
 interface AttachedImage {
@@ -250,7 +249,7 @@ function extractImages(content: unknown): AttachedImage[] {
 	return out;
 }
 
-/** Se il testo e' solo un elenco di allegati (@/path, /path, path escaped), ricava i basename. */
+/** If the text is only a list of attachments (@/path, /path, escaped path), extract the basenames. */
 function humanizeAttachmentText(text: string): string {
 	const trimmed = text.trim();
 	if (!trimmed) return text;
@@ -286,7 +285,7 @@ function humanizeAttachmentText(text: string): string {
 	return basenames.join(", ");
 }
 
-/** Primo messaggio utente del ramo corrente (testo + immagini allegate). */
+/** First user message of the current branch (text + attached images). */
 function readFirstUserMessage(ctx: ExtensionContext): FirstMessage | undefined {
 	try {
 		for (const entry of ctx.sessionManager.getBranch()) {
@@ -296,12 +295,12 @@ function readFirstUserMessage(ctx: ExtensionContext): FirstMessage | undefined {
 			if (text || images.length > 0) return { text, images };
 		}
 	} catch {
-		// La sessione potrebbe non essere ancora pronta: ignora.
+		// The session may not be ready yet: ignore.
 	}
 	return undefined;
 }
 
-/** Titolo immediato (provvisorio) ricavato dalla prima riga del messaggio. */
+/** Immediate (provisional) title taken from the first line of the message. */
 function provisionalTitle(text: string): string {
 	const humanized = humanizeAttachmentText(text);
 	const firstLine =
@@ -322,20 +321,20 @@ function provisionalTitle(text: string): string {
 	return clean;
 }
 
-/** Descrizione immediata (provvisoria): prime frasi del messaggio, compattate. */
+/** Immediate (provisional) description: first sentences of the message, compacted. */
 function provisionalDescription(text: string): string {
 	let clean = humanizeAttachmentText(text).replace(/\s+/g, " ").trim();
 	if (!clean) return "";
 	if (clean.length > CONFIG.descriptionMaxChars) {
 		const cut = clean.slice(0, CONFIG.descriptionMaxChars - 1);
-		// Taglia sull'ultimo spazio per non spezzare le parole.
+		// Cut at the last space so as not to break words.
 		const lastSpace = cut.lastIndexOf(" ");
 		clean = `${(lastSpace > CONFIG.descriptionMaxChars * 0.5 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 	}
 	return clean;
 }
 
-/** Pulisce il titolo restituito dal modello. */
+/** Cleans the title returned by the model. */
 function sanitizeTitle(raw: string): string | undefined {
 	const firstLine = raw
 		.split(/\r?\n/)
@@ -358,13 +357,13 @@ function sanitizeTitle(raw: string): string | undefined {
 	return title;
 }
 
-/** Pulisce la descrizione restituita dal modello. */
+/** Cleans the description returned by the model. */
 function sanitizeDescription(raw: string): string | undefined {
 	let text = raw
 		.replace(/^["'`«»“”‘’]+|["'`«»“”‘’]+$/g, "")
 		.replace(/\s+/g, " ")
 		.trim();
-	// Se il modello ha aggiunto un'etichetta, toglila.
+	// If the model added a label, remove it.
 	text = text.replace(/^(descrizione|description|task|compito)\s*[:\-–—]\s*/i, "").trim();
 	if (!text) return undefined;
 	if (text.length > CONFIG.descriptionMaxChars) {
@@ -376,7 +375,7 @@ function sanitizeDescription(raw: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Generazione di titolo + descrizione con il modello (una sola chiamata)
+// Generating title + description with the model (a single call)
 // ---------------------------------------------------------------------------
 
 type TitleModel = ReturnType<ExtensionContext["modelRegistry"]["getAvailable"]>[number];
@@ -384,7 +383,7 @@ type TitleModel = ReturnType<ExtensionContext["modelRegistry"]["getAvailable"]>[
 function pickTitleModel(ctx: ExtensionContext): TitleModel | undefined {
 	const registry = ctx.modelRegistry;
 
-	// 1. Modello indicato esplicitamente nella configurazione.
+	// 1. Model explicitly set in the configuration.
 	if (CONFIG.titleModel) {
 		const slash = CONFIG.titleModel.indexOf("/");
 		if (slash > 0) {
@@ -393,15 +392,15 @@ function pickTitleModel(ctx: ExtensionContext): TitleModel | undefined {
 		}
 	}
 
-	// 2. Modello corrente della sessione.
+	// 2. Current model of the session.
 	if (ctx.model && registry.hasConfiguredAuth(ctx.model)) return ctx.model;
 
-	// 3. Primo modello disponibile con credenziali configurate.
+	// 3. First available model with configured credentials.
 	return registry.getAvailable().find((model) => registry.hasConfiguredAuth(model));
 }
 
 function parseTitleAndDescription(raw: string, fallbackText: string): { title?: string; description?: string } {
-	// Il modello dovrebbe rispondere con JSON: {"title": "...", "description": "..."}
+	// The model should reply with JSON: {"title": "...", "description": "..."}
 	const cleaned = raw
 		.replace(/```(?:json)?\s*/gi, "")
 		.replace(/```\s*/g, "")
@@ -419,11 +418,11 @@ function parseTitleAndDescription(raw: string, fallbackText: string): { title?: 
 				typeof parsed.description === "string" ? sanitizeDescription(parsed.description) : undefined;
 			if (title || description) return { title, description };
 		} catch {
-			// Sotto: fallback sul testo libero.
+			// Below: fallback to free text.
 		}
 	}
 
-	// Fallback: prova "title: ...\ndescription: ..." oppure usa il testo come titolo.
+	// Fallback: try "title: ...\ndescription: ..." or use the text as the title.
 	const lines = cleaned.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 	let title: string | undefined;
 	let description: string | undefined;
@@ -457,10 +456,10 @@ async function generateTitleAndDescription(
 	ctx.signal?.addEventListener("abort", onAbort, { once: true });
 
 	try {
-		// Usa il modello corrente (vision quando disponibile): se il primo messaggio
-		// e' solo un allegato (@/path/screenshot.png) il testo da solo non basta —
-		// il modello deve guardare le immagini per fare un titolo corto che stia
-		// per intero nella barra in alto, senza troncamenti.
+		// Use the current model (vision when available): if the first message
+		// is only an attachment (@/path/screenshot.png) the text alone is not
+		// enough — the model must look at the images to make a short title that
+		// fits in full in the top bar, with no truncation.
 		const hasImages = images.length > 0;
 		const displayText = humanizeAttachmentText(userText).slice(0, 1500);
 		const prompt = [
@@ -520,7 +519,7 @@ async function generateTitleAndDescription(
 		try {
 			response = await send(hasImages);
 		} catch (err) {
-			// Modello senza vision o provider che rifiuta le immagini: riprova solo testo.
+			// Model without vision or provider that rejects images: retry with text only.
 			if (!hasImages) throw err;
 			response = await send(false);
 		}
@@ -532,7 +531,7 @@ async function generateTitleAndDescription(
 
 			return parseTitleAndDescription(text, displayText);
 	} catch {
-		// Timeout, abort o provider senza auth: si tengono i valori provvisori.
+		// Timeout, abort or provider without auth: keep the provisional values.
 		return {};
 	} finally {
 		clearTimeout(timeout);
@@ -541,7 +540,7 @@ async function generateTitleAndDescription(
 }
 
 // ---------------------------------------------------------------------------
-// Componenti TUI: header (logo + descrizione) e widget (titolo corto)
+// TUI components: header (logo + description) and widget (short title)
 // ---------------------------------------------------------------------------
 
 interface BannerState {
@@ -561,7 +560,7 @@ function currentState(pi: ExtensionAPI, ctx?: ExtensionContext): BannerState {
 	};
 }
 
-/** Logo π grande in ASCII art, colorato con il colore "accent" del tema. */
+/** Large π logo in ASCII art, colored with the theme "accent" color. */
 function getLargeLogo(theme: Theme): string[] {
 	const accent = (text: string) => theme.fg("accent", text);
 	return [
@@ -579,9 +578,9 @@ function getLargeLogo(theme: Theme): string[] {
 }
 
 /**
- * Header: logo + testo originale completo del primo messaggio (sotto il logo).
- * Nessun troncamento: il testo viene solo mandato a capo sulla larghezza
- * disponibile, per intero.
+ * Header: logo + full original text of the first message (under the logo).
+ * No truncation: the text is only wrapped to the available
+ * width, in full.
  */
 function wrapFullText(text: string, width: number): string[] {
 	const out: string[] = [];
@@ -593,8 +592,8 @@ function wrapFullText(text: string, width: number): string[] {
 		}
 		out.push(...wrapTextWithAnsi(paragraph.trim(), w));
 	}
-	// Evita header infiniti con messaggi enormi: mostra tutto, ma senza
-	// righe vuote finali accumulate.
+	// Avoid infinite headers with huge messages: show everything, but without
+	// the accumulated trailing empty lines.
 	while (out.length > 1 && out[out.length - 1] === "") out.pop();
 	return out;
 }
@@ -604,7 +603,7 @@ function makeHeaderComponent(state: BannerState, theme: Theme) {
 		render(width: number): string[] {
 			if (CONFIG.logo === "large") {
 				const lines = getLargeLogo(theme).map((line) => truncateToWidth(line, width, "…"));
-				// Sotto il logo: testo originale completo, senza limiti.
+				// Under the logo: full original text, with no limits.
 				const body = (state.originalText ?? state.description ?? "").trim();
 				if (body) {
 					for (const line of wrapFullText(body, width - 2)) {
@@ -622,7 +621,7 @@ function makeHeaderComponent(state: BannerState, theme: Theme) {
 			const logoMark = theme.fg("accent", "π");
 			const body = (state.originalText ?? state.description ?? state.title).trim();
 			if (!body) return [`${logoMark}`];
-			// Versione piccola: comunque testo intero, mandato a capo.
+			// Small version: still the full text, wrapped.
 			const full = wrapFullText(body, width - 4);
 			const lines: string[] = full.map((line) => (line ? `${logoMark}  ${line}` : ""));
 			return lines;
@@ -633,16 +632,16 @@ function makeHeaderComponent(state: BannerState, theme: Theme) {
 	};
 }
 
-/** Widget: descrizione corta AI, sticky sopra l'editor — sempre per intero, mai troncata. */
+/** Widget: short AI description, sticky above the editor — always in full, never truncated. */
 function makeWidgetComponent(state: BannerState, theme: Theme) {
 	return {
 		render(width: number): string[] {
 			const styled = state.hasTitle
 				? theme.bold(state.title)
 				: theme.italic(theme.fg("dim", state.title));
-			// Mostra il titolo corto per intero: wrap su piu' righe invece di troncare con …
-			// Il titolo e' generato corto dall'AI apposta per stare in 1 riga; il wrap
-			// garantisce comunque la visibilita' completa su terminali stretti.
+			// Show the short title in full: wrap on multiple lines instead of truncating with …
+			// The title is generated short by the AI on purpose to fit in one line; the wrap
+			// still guarantees full visibility on narrow terminals.
 			const lines = wrapTextWithAnsi(styled, Math.max(20, width));
 			return lines.length > 0 ? lines : [styled];
 		},
@@ -652,7 +651,7 @@ function makeWidgetComponent(state: BannerState, theme: Theme) {
 	};
 }
 
-/** Aggiorna header, widget e titolo del terminale in base allo stato corrente. */
+/** Updates the header, widget and terminal title based on the current state. */
 function refreshUI(pi: ExtensionAPI, ctx: ExtensionContext): void {
 	if (!ctx.hasUI) return;
 	const state = currentState(pi, ctx);
@@ -671,18 +670,18 @@ function refreshUI(pi: ExtensionAPI, ctx: ExtensionContext): void {
 }
 
 // ---------------------------------------------------------------------------
-// Estensione
+// Extension
 // ---------------------------------------------------------------------------
 
 export default function piBannerExtension(pi: ExtensionAPI) {
 	let titleInFlight = false;
 
 	/**
-	 * Raffina titolo + descrizione con una chiamata al modello.
-	 * `force` serve a /title auto e /desc auto, che devono funzionare
-	 * anche con autoTitle=false.
-	 * Se la sessione ha già un titolo (es. impostato con /title), aggiorna
-	 * solo la descrizione per non sovrascriverlo.
+	 * Refine title + description with a single call to the model.
+	 * `force` is used by /title auto and /desc auto, which must work
+	 * even with autoTitle=false.
+	 * If the session already has a title (e.g. set with /title), update
+	 * only the description so as not to overwrite it.
 	 */
 	async function refineTitleAndDescription(
 		ctx: ExtensionContext,
@@ -698,7 +697,7 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 		titleInFlight = true;
 		try {
 			const generated = await generateTitleAndDescription(ctx, userText, images);
-			// Non sovrascrivere un titolo cambiato nel frattempo (es. /title o /name).
+			// Don't overwrite a title changed in the meantime (e.g. /title or /name).
 			if (pi.getSessionName() !== expected) {
 				if (generated.description) {
 					setDescription(generated.description, ctx);
@@ -721,11 +720,11 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 		}
 	}
 
-	// All'avvio: mostra subito il testo originale completo sotto il logo;
-	// titolo corto + descrizione restano per widget e terminale.
+	// At startup: immediately show the full original text under the logo;
+	// the short title + description remain for the widget and terminal.
 	pi.on("session_start", (_event, ctx) => {
 		titleInFlight = false;
-		// Ripristina descrizione e originale già noti per questa sessione (stesso processo).
+		// Restore the already-known description and original text for this session (same process).
 		const sid = getSessionId(ctx);
 		currentDescription = (sid ? descriptionBySession.get(sid) : undefined) ?? undefined;
 		currentOriginal = (sid ? originalBySession.get(sid) : undefined) ?? undefined;
@@ -742,29 +741,29 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 		if (!pi.getSessionName()) {
 			if (!CONFIG.autoTitle || !CONFIG.autoTitleOnResume) return;
 			pi.setSessionName(provisionalTitle(firstText || "screenshot"));
-			setDescription(provisionalDescription(firstText) || "Immagine allegata", ctx);
+			setDescription(provisionalDescription(firstText) || "Attached image", ctx);
 			refreshUI(pi, ctx);
 			void refineTitleAndDescription(ctx, firstText, false, firstImages);
 		} else if (!getDescription(ctx)) {
 			if (!CONFIG.autoTitle || !CONFIG.autoTitleOnResume) return;
-			setDescription(provisionalDescription(firstText) || "Immagine allegata", ctx);
+			setDescription(provisionalDescription(firstText) || "Attached image", ctx);
 			refreshUI(pi, ctx);
 			void refineTitleAndDescription(ctx, firstText, false, firstImages);
 		}
 	});
 
-	// Titolo cambiato (dall'estensione, da /name o da /title): aggiorna la UI.
+	// Title changed (from the extension, from /name or from /title): update the UI.
 	pi.on("session_info_changed", (_event, ctx) => {
 		refreshUI(pi, ctx);
 	});
 
-	// Prima che l'agente parta: salva il testo originale completo per l'header
-	// e assegna titolo + descrizione (provvisori e poi raffinati) per widget/terminale.
+	// Before the agent starts: save the full original text for the header
+	// and assign the title + description (provisional, then refined) for the widget/terminal.
 	pi.on("before_agent_start", async (event, ctx) => {
 		const evt = event as { prompt: string; images?: AttachedImage[] };
 		if (!ctx.hasUI || !evt.prompt.trim()) return;
-		// L'header mostra il primo messaggio per intero: non sovrascriverlo
-		// con i messaggi successivi.
+		// The header shows the first message in full: don't overwrite it
+		// with subsequent messages.
 		if (!getOriginal(ctx)) setOriginal(evt.prompt, ctx);
 		if (pi.getSessionName() && getDescription(ctx)) {
 			refreshUI(pi, ctx);
@@ -790,9 +789,9 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 		if (ctx.mode === "tui") ctx.ui.setHeader(undefined);
 	});
 
-	// Comando manuale: /title, /title <testo>, /title auto
+	// Manual command: /title, /title <text>, /title auto
 	pi.registerCommand("title", {
-		description: "Mostra o imposta il titolo corto (uso: /title [testo | auto])",
+		description: "Shows or sets the short title (usage: /title [text | auto])",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const input = args.trim();
 
@@ -802,34 +801,34 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 				if (ctx.hasUI) {
 					ctx.ui.notify(
 						current
-							? `Titolo: ${current}${desc ? `\nDescrizione: ${desc}` : ""}`
-							: "Nessun titolo impostato. Usa /title <testo> oppure /title auto.",
+							? `Title: ${current}${desc ? `\nDescription: ${desc}` : ""}`
+							: "No title set. Use /title <text> or /title auto.",
 						"info",
 					);
 				}
 				return;
 			}
 
-			if (input === "auto" || input === "rigenera" || input === "regen") {
+			if (input === "auto" || input === "regenerate" || input === "regen") {
 				const first = readFirstUserMessage(ctx);
 				if (!first?.text && !first?.images.length) {
-					if (ctx.hasUI) ctx.ui.notify("Nessun messaggio utente su cui basare il titolo.", "warning");
+					if (ctx.hasUI) ctx.ui.notify("No user message to base the title on.", "warning");
 					return;
 				}
 				if (titleInFlight) {
-					if (ctx.hasUI) ctx.ui.notify("Generazione del titolo già in corso…", "warning");
+					if (ctx.hasUI) ctx.ui.notify("Title generation already in progress…", "warning");
 					return;
 				}
 				const firstText = first?.text ?? "";
 				const firstImages = first?.images ?? [];
 				pi.setSessionName(provisionalTitle(firstText || "screenshot"));
-				setDescription(provisionalDescription(firstText) || "Immagine allegata", ctx);
+				setDescription(provisionalDescription(firstText) || "Attached image", ctx);
 				refreshUI(pi, ctx);
 				await refineTitleAndDescription(ctx, firstText, true, firstImages);
 				if (ctx.hasUI) {
 					const desc = getDescription(ctx);
 					ctx.ui.notify(
-						`Titolo: ${pi.getSessionName() ?? "—"}${desc ? `\nDescrizione: ${desc}` : ""}`,
+						`Title: ${pi.getSessionName() ?? "—"}${desc ? `\nDescription: ${desc}` : ""}`,
 						"info",
 					);
 				}
@@ -838,49 +837,49 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 
 			pi.setSessionName(input);
 			if (ctx.hasUI) {
-				ctx.ui.notify(`Titolo sessione: ${pi.getSessionName() ?? input}`, "info");
+				ctx.ui.notify(`Session title: ${pi.getSessionName() ?? input}`, "info");
 			}
 		},
 	});
 
-	// Comando manuale: /desc, /desc <testo>, /desc auto, /desc clear
+	// Manual command: /desc, /desc <text>, /desc auto, /desc clear
 	pi.registerCommand("desc", {
-		description: "Mostra o imposta la descrizione estesa (uso: /desc [testo | auto | clear])",
+		description: "Shows or sets the extended description (usage: /desc [text | auto | clear])",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const input = args.trim();
 
 			if (!input) {
 				const desc = getDescription(ctx);
 				if (ctx.hasUI) {
-					ctx.ui.notify(desc ? `Descrizione: ${desc}` : "Nessuna descrizione. Usa /desc <testo> oppure /desc auto.", "info");
+					ctx.ui.notify(desc ? `Description: ${desc}` : "No description. Use /desc <text> or /desc auto.", "info");
 				}
 				return;
 			}
 
-			if (input === "clear" || input === "cancella" || input === "off") {
+			if (input === "clear" || input === "off") {
 				setDescription(undefined, ctx);
 				refreshUI(pi, ctx);
-				if (ctx.hasUI) ctx.ui.notify("Descrizione nascosta.", "info");
+				if (ctx.hasUI) ctx.ui.notify("Description hidden.", "info");
 				return;
 			}
 
-			if (input === "auto" || input === "rigenera" || input === "regen") {
+			if (input === "auto" || input === "regenerate" || input === "regen") {
 				const first = readFirstUserMessage(ctx);
 				if (!first?.text && !first?.images.length) {
-					if (ctx.hasUI) ctx.ui.notify("Nessun messaggio utente su cui basare la descrizione.", "warning");
+					if (ctx.hasUI) ctx.ui.notify("No user message to base the description on.", "warning");
 					return;
 				}
 				if (titleInFlight) {
-					if (ctx.hasUI) ctx.ui.notify("Generazione già in corso…", "warning");
+					if (ctx.hasUI) ctx.ui.notify("Generation already in progress…", "warning");
 					return;
 				}
 				const firstText = first?.text ?? "";
 				const firstImages = first?.images ?? [];
-				setDescription(provisionalDescription(firstText) || "Immagine allegata", ctx);
+				setDescription(provisionalDescription(firstText) || "Attached image", ctx);
 				refreshUI(pi, ctx);
 				await refineTitleAndDescription(ctx, firstText, true, firstImages);
 				if (ctx.hasUI) {
-					ctx.ui.notify(`Descrizione: ${getDescription(ctx) ?? "—"}`, "info");
+					ctx.ui.notify(`Description: ${getDescription(ctx) ?? "—"}`, "info");
 				}
 				return;
 			}
@@ -888,7 +887,7 @@ export default function piBannerExtension(pi: ExtensionAPI) {
 			setDescription(sanitizeDescription(input) ?? input.slice(0, CONFIG.descriptionMaxChars), ctx);
 			refreshUI(pi, ctx);
 			if (ctx.hasUI) {
-				ctx.ui.notify(`Descrizione: ${getDescription(ctx) ?? input}`, "info");
+				ctx.ui.notify(`Description: ${getDescription(ctx) ?? input}`, "info");
 			}
 		},
 	});
