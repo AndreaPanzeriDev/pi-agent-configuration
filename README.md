@@ -16,6 +16,7 @@ extensions, automatic setup, and config files, in a single repo reproducible on
 | `extensions/response-sound/` | Plays a short sound when Pi finishes answering. `/sound` commands. Already cross-platform (`afplay`, `paplay`, …). |
 | `extensions/daily-report/` | Day report (`/report`, `/daily`): fast table of the day sessions + AI summary of done/not-finished work, with markdown export. |
 | `setup.sh` | Reproduces the whole configuration on a new machine. |
+| `skills/learn-plan/`, `skills/learn-study/`, `skills/learn-quiz/` | Adaptive learning paths, a local interactive roadmap, and Markdown lessons/quizzes for Obsidian. Shared Node.js runtime, no extra dependencies. |
 | `examples/` | Example config files (`settings.json`, `models.json`, `mcp.json`, `response-sound.json`, `pi-banner.json`). |
 
 ## Browsing (MCP)
@@ -39,7 +40,7 @@ git clone <your-URL> ~/pi-agent-config
 ```
 
 The script:
-1. links every extension into `~/.pi/agent/extensions/` (symlinks);
+1. links every extension into `~/.pi/agent/extensions/` and every skill into `~/.pi/agent/skills/` (symlinks);
 2. installs the example config files **only if they don't already exist**;
 3. runs each extension's own `setup.sh` (for `voice-to-chat`: creates the Python
    venv, installs PortAudio + ffmpeg on macOS, and the Whisper model).
@@ -74,11 +75,70 @@ pi install git:github.com/<your-user>/<repo>
 - `models.json` / `models-store.json` point to **local** endpoints (e.g.
   `http://localhost:8888`) — adjust them for your machines.
 
+## Learning skills
+
+Run `./setup.sh --skills-only` to link the three skills, then `/reload` in Pi.
+The full setup and `--no-native` also link them.
+Installing this repository as a Pi package also discovers `skills/` automatically.
+Keep all three `learn-*` folders together: study and quiz use the runtime and
+format reference bundled with `learn-plan`. Node.js >= 20 is the only runtime
+requirement; there is no npm install step for these skills.
+
+```text
+/skill:learn-plan Voglio imparare algebra, ho tre ore a settimana
+/skill:learn-study percorso "/absolute/path/apprendimento/algebra" nodo equazioni
+/skill:learn-quiz percorso "/absolute/path/apprendimento/algebra" nodo equazioni
+```
+
+`learn-plan` asks one question at a time, diagnoses prerequisites, and builds a
+path tailored to your goal. `learn-study` saves explanations, examples and your
+attempts in Markdown; `learn-quiz` records actual answers, feedback and review
+dates. The skills cover any subject supported by your Pi model and tools.
+Mermaid/UML diagrams work directly in Obsidian; generated images require an
+image tool available to your Pi session.
+
+By default courses live under `./apprendimento/` (ignored by Git). Set
+`PI_LEARN_ROOT` before starting Pi, or name an explicit folder, to use a vault:
+
+```bash
+export PI_LEARN_ROOT="/absolute/path/to/your/Obsidian vault/apprendimento"
+pi
+```
+
+Each course has one authoritative `percorso.json` (plan, progress and history),
+`mappa.html`, `indice.md`, and `lezioni/`, `esercizi/`, `quiz/`, `diario/`,
+`allegati/` folders. Manual completion and quiz verification remain separate.
+Markdown notes are preserved when paths are revised. Back up the whole course
+folder to include notes and attachments.
+
+The map needs the local service to save clicks to disk. A direct `file://` opening
+is a read-only snapshot with the launch command displayed. The service binds to
+`127.0.0.1`, prints its URL and runs until Ctrl+C. Use the browser on the same
+computer as Pi (or forward the printed port if Pi runs remotely).
+It saves atomically and detects competing browser/agent edits. The map polls
+for changes and offers commands to copy back into Pi; it does not call an AI
+model itself. Review dates are displayed in the path and do not send reminders.
+
+Try the example in a disposable folder (it is demo data, not your actual level):
+
+```bash
+node skills/learn-plan/scripts/learn.mjs init /tmp/pi-learn-demo --from examples/learning/plan.json
+node skills/learn-plan/scripts/learn.mjs serve /tmp/pi-learn-demo
+```
+
+Open the printed URL, click a node, choose its state and press **Salva
+avanzamento**. Reload the browser or restart the service: the change remains
+in `/tmp/pi-learn-demo/percorso.json`. `mappa.html` and the generated part of
+`indice.md` are refreshed after each change. Use `render COURSE_FOLDER` to
+rebuild those views if needed. `npm test` exercises persistence, quiz events,
+plan revisions, conflicts and the local HTTP API. The data format and commands
+are documented in [the shared reference](skills/learn-plan/references/workflow.md).
+
 ## Updating
 
 ```bash
 cd ~/pi-agent-config && git pull
-# if you added/modified extensions:
+# if you added/modified extensions or skills:
 ./setup.sh
 ```
 
@@ -89,6 +149,10 @@ pi-agent-config/
 ├── package.json          # Pi Package manifest
 ├── setup.sh              # master installer (Linux/macOS), optional --no-native
 ├── .gitignore            # excludes auth.json, venv, __pycache__
+├── skills/
+│   ├── learn-plan/       # interview, roadmap, shared runtime + HTML template
+│   ├── learn-study/      # incremental Markdown lessons
+│   └── learn-quiz/       # quizzes, evidence and review dates
 ├── extensions/
 │   ├── voice-to-chat/
 │   │   ├── index.ts        # Pi extension

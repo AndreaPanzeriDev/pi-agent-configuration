@@ -7,6 +7,8 @@ description: Verifica gli argomenti di un percorso con quiz adattivi e prove pra
 
 Leggi [il flusso condiviso](../learn-plan/references/workflow.md) e usa `../learn-plan/scripts/learn.mjs`, relativo a questa skill. Lavora in italiano salvo preferenze diverse.
 
+La mappa principale resta il grafo di nodi e prerequisiti del renderer incluso. Registra valutazioni e date con il runtime; non riscrivere HTML, CSS o layout. Esegui `doctor` prima dell’uso e `validate CARTELLA` dopo i salvataggi. Se manca il template o fallisce la conformità, applica la procedura nel riferimento condiviso; non sostituire la mappa con una tabella dei risultati o un altro HTML.
+
 ## Prepara la prova
 
 Risolvi cartella e nodo dagli argomenti; altrimenti esegui `list` e `show` nella radice di studio. Se la richiesta è generica privilegia nodi studiati, lacune recenti e ripassi scaduti. Usa la data locale effettiva. Non attribuire all’utente un corso dimostrativo o progressi inesistenti.

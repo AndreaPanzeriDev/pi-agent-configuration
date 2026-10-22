@@ -3,7 +3,7 @@
 # setup.sh — reproduce this Pi configuration on a new machine (Linux / macOS).
 #
 # It will:
-#   1. link every extension in ./extensions into the Pi agent directory
+#   1. link every extension and skill into the Pi agent directory
 #   2. install the example config files (only if not already present)
 #   3. offer to run each extension's own setup.sh (native deps: Python, PortAudio, …)
 #      (only for extensions that actually contain a setup.sh file)
@@ -13,16 +13,18 @@
 #   git clone <repo> ~/pi-agent-config
 #   ~/pi-agent-config/setup.sh             # full setup (asks per extension)
 #   ~/pi-agent-config/setup.sh --no-native # skip system/Python deps
+#   ~/pi-agent-config/setup.sh --skills-only # link skills without other setup
 #   ~/pi-agent-config/setup.sh --yes       # run every extension setup without asking
 #   ~/pi-agent-config/setup.sh --update    # pull the latest version from the
 #                                          # remote repo, re-link extensions and
 #                                          # refresh the already-installed setups
 #
 # Options:
+#   --skills-only link only the skills; skip extensions, configs and MCP checks
 #   --update      fetch the newest version of this repo (git pull), re-link the
-#                 extensions and re-run the setup of every extension that is
+#                 extensions/skills and re-run the setup of every extension that is
 #                 already installed on this machine (no questions asked)
-#   --no-native   link extensions + install configs, but do NOT offer/run the
+#   --no-native   link extensions/skills + install configs, but do NOT offer/run the
 #                 per-extension native setup (Python venv, PortAudio, model…)
 #   -y, --yes     run every per-extension setup.sh without asking
 #                 (useful for automation)
@@ -36,13 +38,15 @@ DEST_DIR="$AGENT_DIR/extensions"
 SKIP_NATIVE=0
 AUTO_YES=0
 DO_UPDATE=0
+SKILLS_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --no-native|--skip-native) SKIP_NATIVE=1 ;;
+    --skills-only) SKILLS_ONLY=1 ;;
     -y|--yes) AUTO_YES=1 ;;
     -u|--update) DO_UPDATE=1 ;;
     -h|--help)
-      sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '3,/^set -euo pipefail/p' "$0" | sed '$d; s/^# \{0,1\}//'
       exit 0 ;;
     *) printf '\033[1;33m[!]\033[0m Ignored argument: %s\n' "$arg" ;;
   esac
@@ -53,13 +57,11 @@ ok()   { printf '\033[1;32m[✓]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
 
 log "Pi agent dir: $AGENT_DIR"
-mkdir -p "$DEST_DIR"
 
 # --- 0. optional: pull the latest version from the online repo ---------------
 # A per-extension "already installed" marker lives in the agent dir (machine
 # local, never committed), so a fresh clone still asks for everything.
 DONE_DIR="$AGENT_DIR/.setup-done"
-mkdir -p "$DONE_DIR"
 
 if [ "$DO_UPDATE" -eq 1 ]; then
   if [ -d "$SCRIPT_DIR/.git" ] && command -v git >/dev/null 2>&1; then
@@ -86,6 +88,8 @@ voice_installed() {
 }
 
 # --- 1. link extensions ----------------------------------------------------
+if [ "$SKILLS_ONLY" -eq 0 ]; then
+mkdir -p "$DEST_DIR" "$DONE_DIR"
 log "Linking extensions…"
 for src in "$SCRIPT_DIR"/extensions/*; do
   [ -e "$src" ] || continue
@@ -107,6 +111,34 @@ for src in "$SCRIPT_DIR"/extensions/*; do
   ln -s "$src" "$target"
   ok "linked: $name -> $src"
 done
+fi
+
+# --- 1b. link skills (keep sibling paths intact for shared resources) --------
+log "Linking skills…"
+mkdir -p "$AGENT_DIR/skills"
+for src in "$SCRIPT_DIR"/skills/*; do
+  [ -f "$src/SKILL.md" ] || continue
+  name="$(basename "$src")"
+  target="$AGENT_DIR/skills/$name"
+  if [ -e "$target" ] && [ "$target" -ef "$src" ]; then
+    ok "already present: $name"
+    continue
+  fi
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    warn "skill '$name' already exists: making a backup in skill-backups/"
+    # Keep the backup outside skills/ so Pi does not discover it twice.
+    mkdir -p "$AGENT_DIR/skill-backups"
+    backup="$AGENT_DIR/skill-backups/$name.$(date +%s).$$"
+    mv "$target" "$backup"
+  fi
+  ln -s "$src" "$target"
+  ok "linked skill: $name -> $src"
+done
+
+if [ "$SKILLS_ONLY" -eq 1 ]; then
+  ok "Skills linked. In Pi, run /reload to load them."
+  exit 0
+fi
 
 # --- 2. install example config files (never overwrite) ---------------------
 if [ -d "$SCRIPT_DIR/examples" ]; then
@@ -202,6 +234,7 @@ echo -e "\033[1;32m[✓] Pi configuration reproduced.\033[0m"
 echo
 echo "Next steps:"
 echo "  • Log in to the providers:  pi   →   /login   (the keys in auth.json are not versioned)"
-echo "  • In pi:  /reload   to load the extensions"
+echo "  • In pi:  /reload   to load the extensions and skills"
+echo "  • Learning: /skill:learn-plan followed by what you want to learn"
 echo "  • Voice dictation:  Ctrl+Shift+M"
 echo

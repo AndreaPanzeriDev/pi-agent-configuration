@@ -2,6 +2,10 @@
   "name": "pi-agent-config",
   "version": "1.0.0",
   "description": "Personal Pi coding agent configuration: cross-platform extensions + setup.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "learn": "node skills/learn-plan/scripts/learn.mjs"
+  },
   "keywords": [
     "pi-package",
     "pi-coding-agent"

@@ -1,11 +1,19 @@
 ---
 name: learn-plan
-description: Valuta il livello iniziale e crea o rivede un percorso di apprendimento con prerequisiti, mappa HTML interattiva e progressi persistenti. Usa quando l’utente vuole imparare un argomento o pianificare lo studio.
+description: Valuta il livello iniziale e crea o rivede un percorso di apprendimento con una graph map obbligatoria di nodi e prerequisiti, usando il renderer HTML incluso e progressi persistenti. Usa quando l’utente vuole imparare un argomento o pianificare lo studio.
 ---
 
 # Pianifica un percorso
 
 Lavora in italiano, salvo preferenze diverse. Richiede Pi con strumenti di lettura/scrittura e bash, e Node.js >= 20. Installa insieme a `learn-study` e `learn-quiz`: le tre skill condividono una cartella per percorso; la mappa contiene introduzioni brevi, mentre gli approfondimenti vanno in Markdown per Obsidian.
+
+## Formato della mappa: vincolo di questa skill
+
+La vista principale deve essere **sempre una graph map navigabile**: argomenti rappresentati da nodi cliccabili, frecce dal prerequisito all’argomento dipendente, ramificazioni reali e stati di avanzamento visibili. Mantieni l’aspetto del template incluso. Usa i moduli per raggruppare i contenuti e le relazioni per indicare dipendenze effettive; non collegare artificialmente ogni nodo al precedente per ottenere una scaletta.
+
+**Genera soltanto i contenuti del piano JSON e le note Markdown. L’HTML, il CSS, il layout del grafo e il JavaScript della mappa vengono esclusivamente da `scripts/learn.mjs` e `assets/map.html`.** Non scrivere, sostituire o reinventare `mappa.html` o il template. Elenchi, tabelle, timeline, griglie di schede scollegate e diagrammi Mermaid non sostituiscono la mappa principale; Mermaid resta disponibile nelle note.
+
+Prima di creare o aggiornare un percorso esegui `node "PERCORSO_ASSOLUTO_DELLA_SKILL/scripts/learn.mjs" doctor`, sostituendo il percorso con quello effettivo. Se manca Node, una skill sorella, il template o il riferimento, segnala esattamente la risorsa mancante e fermati sulla generazione della mappa: non inventare una vista alternativa. Copia e installa tutte e tre le cartelle complete, inclusa `assets/`.
 
 ## Comprendi il punto di partenza
 
@@ -31,6 +39,8 @@ La radice predefinita è `PI_LEARN_ROOT`, se impostata, altrimenti `apprendiment
 
 Scrivi il piano in un JSON temporaneo, quindi usa `init CARTELLA --from FILE`. Per rivederlo usa `plan CARTELLA --from FILE --expected-revision N` dopo `show`. **Non riscrivere direttamente `percorso.json`**: usa il runtime per preservare cronologia e modifiche contemporanee. Conserva i risultati dell’intervista in `diario/` e collegali con un evento di valutazione quando esistono prove concrete.
 
-Verifica con `validate CARTELLA`. Avvia `serve CARTELLA` in un processo che rimanga attivo, controlla che risponda e fornisci il vero URL locale stampato. Se non puoi mantenere il processo, dai il comando esatto per avviarlo nel terminale dell’utente senza fingere che sia già in esecuzione. L’HTML aperto come `file://` è una vista di sola lettura e lo segnala; i clic si salvano dal servizio locale.
+Esegui `render CARTELLA` e poi `validate CARTELLA`. Il controllo deve confermare renderer `pi-learn-graph-v1`, numero di nodi e numero di archi: verifica anche che i prerequisiti rappresentino il percorso concepito. Un errore di conformità si ripara con `render`, preservando dati e note. Per un percorso preesistente con dati compatibili, questo adotta la graph map inclusa senza rifare l’intervista. Se i dati hanno un altro formato, preservali e chiarisci la conversione necessaria.
+
+Avvia `serve CARTELLA` in un processo che rimanga attivo, controlla che risponda e fornisci il vero URL locale stampato. Se hai un browser disponibile, verifica nodi e frecce, selezione di un nodo e dettagli, navigazione del grafo e salvataggio persistente di un progresso effettivo; non inventare esiti di verifica se hai solo controllato l’HTTP. Se non puoi mantenere il processo, dai il comando esatto per avviarlo nel terminale dell’utente senza fingere che sia già in esecuzione. L’HTML aperto come `file://` è una vista di sola lettura e lo segnala; i clic si salvano dal servizio locale.
 
 Consegna il percorso della cartella, il link alla mappa, la prossima tappa e gli esempi `/skill:learn-study percorso "CARTELLA" nodo ID` e `/skill:learn-quiz percorso "CARTELLA" nodo ID`. Gli argomenti sono una richiesta in linguaggio naturale: non sono comandi di shell.

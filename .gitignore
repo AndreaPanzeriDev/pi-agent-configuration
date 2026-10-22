@@ -12,3 +12,10 @@ __pycache__/
 # ── Local / machine-specific ────────────────────────────────────────────
 .DS_Store
 *.log
+
+# Personal learning notes and progress
+apprendimento/
+
+# Local learning demo and validation files (distribute only the skills)
+/examples/learning/
+/tests/learning.test.mjs

@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE = path.resolve(HERE, '../assets/map.html');
+const RENDERER = 'pi-learn-graph-v1';
+const BUNDLE_FILES = ['../SKILL.md', '../assets/map.html', '../references/workflow.md',
+  '../../learn-study/SKILL.md', '../../learn-quiz/SKILL.md'];
 const DATA = 'percorso.json';
 const STATES = ['not_started', 'in_progress', 'completed', 'review'];
 const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -16,6 +19,22 @@ const now = () => new Date().toISOString();
 
 function check(condition, message, status = 400) {
   if (!condition) throw Object.assign(new Error(message), { status });
+}
+
+export function checkBundle() {
+  const missing = BUNDLE_FILES.filter(relative => {
+    try { return !fs.statSync(path.resolve(HERE, relative)).isFile(); }
+    catch { return true; }
+  });
+  check(!missing.length, `Installazione skill incompleta: ${missing.join(', ')}. Ripristina le tre cartelle complete, compresi assets e references; non creare un HTML alternativo.`);
+  const template = fs.readFileSync(TEMPLATE, 'utf8');
+  check(template.includes(`<meta name="pi-learn-renderer" content="${RENDERER}">`) &&
+    template.includes('id="graph"') && template.includes('id="edges"'),
+  'Il modello HTML incluso non è il renderer a grafo previsto. Ripristina assets/map.html dalla skill.');
+  for (const marker of ['<!--COURSE_DATA-->', '<!--COURSE_TITLE-->']) {
+    check(template.split(marker).length === 2, `Modello HTML non valido: manca o è duplicato ${marker}`);
+  }
+  return { renderer: RENDERER, files: BUNDLE_FILES.map(relative => path.resolve(HERE, relative)) };
 }
 function string(value, label) {
   check(typeof value === 'string' && value.trim().length > 0, `${label}: testo obbligatorio`);
@@ -135,6 +154,7 @@ function initialProgress(node) {
 }
 
 export function initialize(dir, plan) {
+  checkBundle();
   validatePlan(plan);
   fs.mkdirSync(dir, { recursive: true });
   return lock(dir, () => {
@@ -149,6 +169,7 @@ export function initialize(dir, plan) {
 }
 
 function mutate(dir, expected, fn) {
+  checkBundle();
   return lock(dir, () => {
     const course = loadCourse(dir);
     if (expected !== undefined) check(course.revision === expected, 'Dati aggiornati da un’altra sessione. Ricarica e ripeti la modifica.', 409);
@@ -237,15 +258,29 @@ export function replacePlan(dir, plan, expected) {
 
 export function snapshot(dir, course = loadCourse(dir)) {
   const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
-  return { ...course, course_dir: path.resolve(dir),
+  return { ...course, renderer: RENDERER, course_dir: path.resolve(dir),
     serve_command: `node ${quote(fileURLToPath(import.meta.url))} serve ${quote(path.resolve(dir))}` };
 }
 const escapeHtml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-function writeView(dir, course) {
+function graphHtml(dir, course) {
+  checkBundle();
   const data = JSON.stringify(snapshot(dir, course)).replaceAll('<', '\\u003c').replaceAll('\u2028', '\\u2028').replaceAll('\u2029', '\\u2029');
-  const html = fs.readFileSync(TEMPLATE, 'utf8').replace('<!--COURSE_DATA-->', () => data)
+  return fs.readFileSync(TEMPLATE, 'utf8').replace('<!--COURSE_DATA-->', () => data)
     .replace('<!--COURSE_TITLE-->', () => escapeHtml(course.plan.title));
-  atomicWrite(path.join(dir, 'mappa.html'), html);
+}
+export function verifyMap(dir) {
+  return lock(dir, () => {
+    const course = loadCourse(dir);
+    const filename = path.join(dir, 'mappa.html');
+    check(fs.existsSync(filename), 'Mappa mancante. Esegui render sulla cartella del percorso.');
+    check(fs.readFileSync(filename, 'utf8') === graphHtml(dir, course),
+      'Mappa non conforme al renderer a grafo incluso o non aggiornata. Esegui render sulla cartella del percorso, poi ripeti validate. Non riscrivere HTML o CSS con l’AI.');
+    return { renderer: RENDERER, nodes: course.plan.nodes.length,
+      edges: course.plan.nodes.reduce((sum, node) => sum + node.prerequisites.length, 0), revision: course.revision };
+  });
+}
+function writeView(dir, course) {
+  atomicWrite(path.join(dir, 'mappa.html'), graphHtml(dir, course));
   const start = '<!-- learn:index:start -->', end = '<!-- learn:index:end -->';
   const indexFile = path.join(dir, 'indice.md');
   const body = [start, `# ${course.plan.title}`, '', course.plan.description, '', `Obiettivo: ${course.plan.goal}`, '',
@@ -265,6 +300,8 @@ export function render(dir, course) {
 }
 
 export function createServer(dir, { port = 0 } = {}) {
+  // Existing courses adopt the bundled graph, preserving all learning data.
+  render(dir);
   loadCourse(dir);
   const token = randomBytes(24).toString('hex');
   const server = http.createServer(async (req, res) => {
@@ -281,10 +318,7 @@ export function createServer(dir, { port = 0 } = {}) {
       if (req.headers.origin) check(req.headers.origin === `http://${host}`, 'Origine non consentita', 403);
       const url = new URL(req.url, `http://${host}`);
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/mappa.html')) {
-        const data = JSON.stringify(snapshot(dir)).replaceAll('<', '\\u003c');
-        const html = fs.readFileSync(TEMPLATE, 'utf8').replace('<!--COURSE_DATA-->', () => data)
-          .replace('<!--COURSE_TITLE-->', () => escapeHtml(loadCourse(dir).plan.title));
-        return send(200, html, 'text/html; charset=utf-8');
+        return send(200, graphHtml(dir, loadCourse(dir)), 'text/html; charset=utf-8');
       }
       if (req.method === 'GET' && url.pathname === '/api/course') return send(200, { course: snapshot(dir), token });
       if (req.method === 'GET' && url.pathname.startsWith('/notes/')) {
@@ -313,10 +347,11 @@ export function createServer(dir, { port = 0 } = {}) {
 }
 
 const HELP = `Apprendimento Pi (Node.js >= 20, nessuna dipendenza)
+  doctor                               verifica le tre skill e il renderer a grafo
   init <cartella> --from <piano.json>
   list [radice]                         default: PI_LEARN_ROOT o ./apprendimento
   show <cartella>                       dati completi con revisione
-  validate <cartella>
+  validate <cartella>                   verifica dati e HTML del renderer a grafo
   render <cartella>                     aggiorna HTML statico e indice Markdown
   serve <cartella> [--port 0]            resta in esecuzione; Ctrl+C per chiudere
   progress <cartella> <nodo> --state <not_started|in_progress|completed|review>
@@ -338,6 +373,7 @@ async function main(args) {
   }
   const [command, location, nodeId] = positionals;
   if (!command || command === 'help') { console.log(HELP); return; }
+  if (command === 'doctor') { console.log(JSON.stringify({ ok: true, ...checkBundle() }, null, 2)); return; }
   if (command === 'list') {
     const root = path.resolve(location || process.env.PI_LEARN_ROOT || 'apprendimento');
     const courses = fs.existsSync(root) ? fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory() && fs.existsSync(path.join(root, d.name, DATA))).map(d => {
@@ -354,7 +390,7 @@ async function main(args) {
   switch (command) {
     case 'init': check(flags.from, 'Serve --from'); course = initialize(dir, readJson(flags.from)); break;
     case 'show': console.log(JSON.stringify(snapshot(dir), null, 2)); return;
-    case 'validate': course = loadCourse(dir); break;
+    case 'validate': console.log(JSON.stringify({ ok: true, directory: dir, ...verifyMap(dir) })); return;
     case 'render': render(dir); course = loadCourse(dir); break;
     case 'progress': {
       check(flags.state, 'Serve --state');
