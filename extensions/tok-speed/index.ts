@@ -3,8 +3,8 @@
  *
  * Replaces the built-in footer with one that shows the generation speed
  * (output tokens per second) of the last assistant response inline in the
- * stats line, next to the token/cost numbers. The context percentage is
- * intentionally omitted.
+ * stats line, next to the token/cost numbers, plus the current context-window
+ * usage percentage between the cost and the speed.
  */
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -83,6 +83,21 @@ export default function (pi: ExtensionAPI) {
 					if (cacheRead) statsParts.push(`R${fmt(cacheRead)}`);
 					if (cacheWrite) statsParts.push(`W${fmt(cacheWrite)}`);
 					if (cost) statsParts.push(`$${cost.toFixed(3)}`);
+
+					// Current context-window usage (same estimate pi uses for auto-compaction).
+					const contextUsage = ctx.getContextUsage();
+					if (contextUsage && contextUsage.contextWindow > 0) {
+						const percent = contextUsage.percent;
+						const label = `${percent === null ? "?" : percent.toFixed(1)}%/${fmt(contextUsage.contextWindow)}`;
+						const colored =
+							percent !== null && percent > 90
+								? theme.fg("error", label)
+								: percent !== null && percent > 70
+									? theme.fg("warning", label)
+									: label;
+						statsParts.push(colored);
+					}
+
 					if (tokPerSec !== undefined) {
 						statsParts.push(theme.fg("accent", `${tokPerSec.toFixed(1)} tok/s`));
 					}
