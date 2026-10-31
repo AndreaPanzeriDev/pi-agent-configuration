@@ -7,13 +7,14 @@ locally.
 
 ## Cross-platform
 
-This extension works on **Linux**, **macOS (Apple Silicon)**, and
+This extension works on **Linux**, **macOS (Apple Silicon and Intel)**, and
 **(WSL)Windows** with a single codebase. The transcription backend is
 **chosen automatically** based on the system:
 
 | Platform         | Backend            | Hardware used                           |
 |------------------|--------------------|-----------------------------------------|
-| macOS (Apple)    | **MLX Whisper**    | Metal GPU / Neural Engine               |
+| macOS Apple Silicon | **MLX Whisper** | Metal GPU / Neural Engine               |
+| macOS Intel      | **faster-whisper** | CPU                                     |
 | Linux + NVIDIA   | **faster-whisper** | **CUDA** (GPU)                          |
 | Linux / Windows  | **faster-whisper** | CPU (automatic fallback when no GPU)    |
 
@@ -34,6 +35,20 @@ so we no longer depend on `arecord` (Linux-only).
    when happy. If the editor already had text, the transcription is appended.
 
 Pressing `Ctrl+Shift+M` again during transcription **cancels** it.
+
+### `/voice` slash command
+
+If your terminal can't deliver `Ctrl+Shift+M` (many xterm-style terminals
+—including GNOME Terminal and Ptyxis—collapse `Ctrl+Shift+<letter>` to a plain
+`Ctrl+M`, so the shortcut never fires), use the slash command instead. Type it
+in pi's input box:
+
+- `/voice` — start/stop recording, **exactly like `Ctrl+Shift+M`**.
+- `/voice stop` (or `/voice cancel`) — cancel an in-progress recording.
+- `/voice <text>` — insert `<text>` directly into pi's editor (press Enter to
+  send). Handy when you already have the text and just want it in the box.
+
+Run `/reload` after editing the extension so pi picks up `/voice`.
 
 ## Installation (on each machine)
 
@@ -64,13 +79,23 @@ Safety max duration: 120 seconds (`--max-duration`, configurable).
 
 ## Configuration
 
-Environment variables (optional), read by `voice.py`:
+`setup.sh` detects the backend and writes the chosen model/device to
+`<agent-dir>/voice-to-chat.json` (default `~/.pi/agent/voice-to-chat.json`).
+The extension reads that file and passes the same values to `voice.py`, so the
+model downloaded by the setup is exactly the one used at runtime:
+
+- **CPU** (including Intel macOS) → `medium`
+- **CUDA / Apple Silicon (MLX)** → `large-v3-turbo`
+- a `MODEL=...` override given to `setup.sh` is preserved
+
+Environment variables (optional) take precedence over the saved file and are
+read by `voice.py`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VOICE_MODEL` | `large-v3-turbo` | Whisper model. `base` < `small` < `medium` < `large-v3` ≈ `large-v3-turbo`. |
+| `VOICE_MODEL` | from `voice-to-chat.json` (`medium` on CPU, `large-v3-turbo` on CUDA/MLX) | Whisper model. `base` < `small` < `medium` < `large-v3` ≈ `large-v3-turbo`. |
 | `VOICE_LANGUAGE` | `auto` | `auto`, a code (`it`, `en`, …) or a name (`italian`, `english`, …). |
-| `VOICE_DEVICE` | `cuda` (Linux) / `mps` (Mac) | `cuda` (fast) / `cpu` / `mps`. Falls back to CPU on its own when CUDA is unavailable. |
+| `VOICE_DEVICE` | from `voice-to-chat.json` (`cpu` on Intel Mac, `cuda` on Linux/Windows, `mps` on Apple Silicon) | `cuda` (fast) / `cpu` / `mps`. Falls back to CPU on its own when CUDA is unavailable. |
 | `VOICE_COMPUTE_TYPE` | `float16` (CUDA) / `int8` (CPU) | CTranslate2 compute type. |
 | `VOICE_PROMPT` | *(empty)* | Text steering the transcription (proper nouns, technical terms…). |
 | `VOICE_PYTHON` | *(empty)* | Python interpreter path to use (override). |
@@ -120,7 +145,8 @@ the `voice.py` messages.
 ## Architecture
 
 - `voice.py` — records (`sounddevice`/PortAudio) until it receives SIGINT, then
-  transcribes with MLX on Mac or faster-whisper (CUDA/CPU) on Linux/Windows.
+  transcribes with MLX on Apple Silicon or faster-whisper (CUDA/CPU) elsewhere,
+  including Intel Macs.
 - `voice_models.py` — maps short model names (`large-v3-turbo`,
   `medium`, …) to the right Hugging Face repos for MLX
   (`mlx-community/whisper-…`). faster-whisper understands them natively.

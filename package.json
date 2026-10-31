@@ -10,6 +10,11 @@
     "pi-package",
     "pi-coding-agent"
   ],
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
   "private": true,
   "license": "MIT"
 }

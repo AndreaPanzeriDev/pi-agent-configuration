@@ -8,10 +8,12 @@ No external services (no OpenAI/Google/Azure): everything runs on-device.
 
 Backend selection is automatic:
 
-  * macOS (Apple Silicon, `darwin`) -> **MLX Whisper** (`mlx-whisper`) which
-    runs on the Metal/Neural-Engine GPU. This is the fastest option on Mac.
-  * Linux / Windows -> **faster-whisper** (CTranslate2). Uses CUDA on NVIDIA
-    GPUs, and transparently falls back to CPU when no GPU is available.
+  * macOS on Apple Silicon (`darwin` + arm64) -> **MLX Whisper**
+    (`mlx-whisper`) which runs on the Metal/Neural-Engine GPU. This is the
+    fastest option on those Macs.
+  * macOS on Intel, Linux and Windows -> **faster-whisper** (CTranslate2).
+    Uses CUDA on NVIDIA GPUs, and transparently falls back to CPU when no GPU
+    is available.
 
 Recording is done with `sounddevice` (PortAudio) so the *same* code path works
 on Linux, macOS and Windows.
@@ -33,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import signal
 import sys
 import tempfile
@@ -47,19 +50,35 @@ from voice_models import resolve_mlx_model
 
 PLATFORM = sys.platform  # "linux" | "darwin" | "win32"
 IS_MAC = PLATFORM == "darwin"
+IS_APPLE_SILICON = IS_MAC and platform.machine().lower() in ("arm64", "aarch64")
+# MLX runs on Metal (mps). Intel Macs and every other platform use
+# faster-whisper: CUDA by default, with an automatic CPU fallback; Intel Macs
+# have no CUDA at all, so start on the CPU.
+DEFAULT_DEVICE = "mps" if IS_APPLE_SILICON else ("cpu" if IS_MAC else "cuda")
 
 
 def detect_backend() -> str:
-    return "mlx" if IS_MAC else "faster-whisper"
+    return "mlx" if IS_APPLE_SILICON else "faster-whisper"
+
+
+def cuda_available() -> bool:
+    """True when CTranslate2 can actually use a CUDA device."""
+    try:
+        import ctranslate2
+
+        ctranslate2.get_supported_compute_types("cuda")
+        return True
+    except Exception:
+        return False
 
 
 try:
-    if IS_MAC:
+    if IS_APPLE_SILICON:
         import mlx_whisper  # noqa: F401  (import fails early if not installed)
     else:
         from faster_whisper import WhisperModel  # noqa: F401
 except Exception as e:  # pragma: no cover
-    name = "mlx-whisper" if IS_MAC else "faster-whisper"
+    name = "mlx-whisper" if IS_APPLE_SILICON else "faster-whisper"
     print(
         f"ERROR: {name} not available ({e}). "
         f"Run ./setup.sh to install it.",
@@ -84,15 +103,16 @@ except Exception as e:  # pragma: no cover
 # Whisper model defaults per backend
 # --------------------------------------------------------------------------- #
 
-# Best-quality model on every platform. On CPU-only machines the caller can
-# downgrade it with VOICE_MODEL (see below).
+# Default model per backend (best quality). On CPU-only machines the runtime
+# automatically uses DEFAULT_CPU_MODEL instead; --model / VOICE_MODEL overrides
+# either choice.
 DEFAULT_MODELS = {
     "mlx": "large-v3-turbo",          # Apple Silicon (MLX)
     "faster-whisper": "large-v3-turbo",  # CUDA
 }
 
-# Smaller, faster model used when the big one is auto-selected but we are on
-# CPU (the big model would be painfully slow).
+# Smaller, faster model used when faster-whisper runs on CPU (the big model
+# would be painfully slow).
 DEFAULT_CPU_MODEL = "medium"
 
 
@@ -352,7 +372,7 @@ def _main():
                    help="Whisper model (per-backend default when omitted)")
     p.add_argument("--language", default=os.environ.get("VOICE_LANGUAGE", "auto"))
     p.add_argument("--device", default=os.environ.get("VOICE_DEVICE",
-                   "mps" if IS_MAC else "cuda"))
+                   DEFAULT_DEVICE))
     p.add_argument("--compute-type", default=os.environ.get("VOICE_COMPUTE_TYPE"))
     p.add_argument("--initial-prompt", default=os.environ.get("VOICE_PROMPT", ""))
     p.add_argument("--max-duration", type=float, default=120.0)
@@ -364,6 +384,19 @@ def _main():
     args = p.parse_args()
 
     backend = detect_backend()
+
+    # Normalize the device: MLX only runs on mps, while faster-whisper accepts
+    # cuda/cpu. "auto" (or any other value) is resolved here. On a CPU-only
+    # machine, don't resolve/download the large CUDA model just to fail when
+    # loading it: switch to CPU first so the model default below becomes
+    # DEFAULT_CPU_MODEL.
+    if backend == "mlx":
+        args.device = "mps"
+    elif args.device not in ("cuda", "cpu"):
+        args.device = "cuda" if cuda_available() else "cpu"
+    elif args.device == "cuda" and not cuda_available():
+        print("[voice] cuda not available; using cpu.", file=sys.stderr)
+        args.device = "cpu"
 
     if not args.model:
         args.model = DEFAULT_MODELS[backend]

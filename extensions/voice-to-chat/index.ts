@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type {
-  ExtensionAPI,
-  ExtensionContext,
+import {
+  getAgentDir,
+  type ExtensionAPI,
+  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
 // Resolve everything relative to THIS file so the extension works from any
@@ -102,6 +103,32 @@ function resolvePython(): string {
 
 const SCRIPT = join(EXT_DIR, "voice.py");
 
+/**
+ * Read the model/device chosen by extensions/voice-to-chat/setup.sh.
+ *
+ * setup.sh writes $AGENT_DIR/voice-to-chat.json after downloading the model,
+ * so the runtime uses exactly the model that is already on disk (CPU -> medium,
+ * CUDA/MLX -> large-v3-turbo, or the user's MODEL override). Environment
+ * variables still take precedence.
+ */
+function resolveVoiceConfig(): { model?: string; device?: string } {
+  try {
+    const raw = readFileSync(join(getAgentDir(), "voice-to-chat.json"), "utf8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const model =
+      typeof parsed.model === "string" ? parsed.model.trim() : "";
+    const device =
+      typeof parsed.device === "string" ? parsed.device.trim() : "";
+    return {
+      model: model || undefined,
+      device: device || undefined,
+    };
+  } catch {
+    // No config (or unreadable): let voice.py pick its platform default.
+    return {};
+  }
+}
+
 function render(ctx: ExtensionContext) {
   if (state === "idle") {
     ctx.ui.setStatus("voice", undefined);
@@ -156,11 +183,18 @@ function startRecording(ctx: ExtensionContext) {
   logFile = join(tmpdir(), `pi_voice_${process.pid}_${Date.now()}.log`);
 
   const python = resolvePython();
+  const config = resolveVoiceConfig();
+  // Environment variables win over the saved setup, matching voice.py.
+  const model = process.env.VOICE_MODEL?.trim() || config.model;
+  const device = process.env.VOICE_DEVICE?.trim() || config.device;
+  const scriptArgs = [SCRIPT, "--output", resultFile];
+  if (model) scriptArgs.push("--model", model);
+  if (device) scriptArgs.push("--device", device);
 
   // Important: do NOT inherit stdio — the child must never write to pi's TTY,
   // otherwise it corrupts the TUI rendering.
   const log = createWriteStream(logFile, { flags: "a" });
-  proc = spawn(python, [SCRIPT, "--output", resultFile], {
+  proc = spawn(python, scriptArgs, {
     stdio: ["ignore", "pipe", "pipe"],
   });
   proc.stdout?.on("data", () => {});
@@ -250,6 +284,10 @@ function stopAndTranscribe(ctx: ExtensionContext) {
 }
 
 export default function (pi: ExtensionAPI) {
+  // NOTE: avoid ctrl+shift+<letter>. xterm-compatible terminals (GNOME
+  // Terminal, etc.) drop the shift modifier for control letters, so
+  // ctrl+shift+m arrives as plain ctrl+m and never fires. Function keys
+  // (or alt+key) send a distinct escape sequence in every terminal.
   pi.registerShortcut("ctrl+shift+m", {
     description: "Voice-to-chat: start/stop recording (then transcribes)",
     handler: async (ctx: ExtensionContext) => {
@@ -268,6 +306,59 @@ export default function (pi: ExtensionAPI) {
       } catch (e) {
         reset(ctx);
         ctx.ui.notify(`Voice-to-chat: error: ${e}`, "error");
+      }
+    },
+  });
+
+  // /voice slash command — a keyboard-independent trigger (handy in
+  // terminals where Ctrl+Shift+M collapses to Ctrl+M) plus a way to
+  // inject arbitrary text into the editor.
+  //
+  //   /voice            start/stop recording (same as Ctrl+Shift+M)
+  //   /voice stop       cancel an in-progress recording
+  //   /voice <text>     insert <text> into the editor (press Enter to send)
+  pi.registerCommand("voice", {
+    description:
+      "Voice-to-chat: /voice toggles recording; /voice <text> inserts text; /voice stop cancels",
+    handler: async (args: string, ctx: ExtensionContext) => {
+      const input = (args ?? "").trim();
+
+      // Cancel an in-progress recording.
+      if (input === "stop" || input === "cancel") {
+        if (state === "recording" || state === "transcribing") {
+          proc?.kill("SIGTERM");
+          rmSync(resultFile, { force: true });
+          reset(ctx);
+          ctx.ui.notify("Voice-to-chat: cancelled", "warning");
+        } else {
+          ctx.ui.notify("Voice-to-chat: nothing to cancel", "warning");
+        }
+        return;
+      }
+
+      // No argument → toggle recording, exactly like Ctrl+Shift+M.
+      if (input === "") {
+        if (state === "idle") {
+          startRecording(ctx);
+        } else if (state === "recording") {
+          stopAndTranscribe(ctx);
+        } else {
+          ctx.ui.notify(
+            "Voice-to-chat: already busy (recording or transcribing)",
+            "warning",
+          );
+        }
+        return;
+      }
+
+      // Otherwise treat the argument as text to inject into the editor.
+      try {
+        putInEditor(ctx, input);
+      } catch (e) {
+        ctx.ui.notify(
+          `Voice-to-chat: unable to write to the editor: ${e}`,
+          "error",
+        );
       }
     },
   });

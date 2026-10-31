@@ -2,14 +2,15 @@
 
 My personal **[Pi coding agent](https://pi.dev)** configuration: cross-platform
 extensions, automatic setup, and config files, in a single repo reproducible on
-**Linux** and **macOS (Apple Silicon)**.
+**Linux** and **macOS (Apple Silicon and Intel)**.
 
 ## Contents
 
 | Path | What it is |
 |------|------------|
-| `extensions/voice-to-chat/` | **100% local** voice dictation. macOS → **MLX**, Linux/Windows → **faster-whisper** (CUDA when available). Cross-platform recording via `sounddevice`/PortAudio. |
+| `extensions/voice-to-chat/` | **100% local** voice dictation. macOS Apple Silicon → **MLX**, macOS Intel / Linux / Windows → **faster-whisper** (CUDA when available). Cross-platform recording via `sounddevice`/PortAudio. |
 | `extensions/btw/` | Side question (`/btw`): answer in an overlay panel above the current chat, without leaving the session. Fresh context (repo only, no chat history) with **all tools** — built-ins, extensions, MCP servers, skills. Same model and thinking level, ephemeral (`--no-session`). `/btw -c <question>` also includes the current conversation as reference. |
+| `extensions/auto-compact/` | Compacts the session at a configurable percentage of the context window (default 85%), earlier than Pi's built-in guard. `/autocompact` command. |
 | `extensions/pi-banner/` | Shows the session title (auto-generated from the first message) in the header, sticky line, and terminal title. `/title` command. |
 | `extensions/token-stats/` | Token and cost counts per session, model, and project, with a daily chart. `/stats`, `/stats export`, `/stats prune`, `/stats reset` commands. |
 | `extensions/tok-speed/` | Replaces the footer stats line with the output tokens-per-second rate of the last assistant response, inline next to the token/cost numbers.
@@ -40,16 +41,29 @@ git clone <your-URL> ~/pi-agent-config
 ```
 
 The script:
-1. links every extension into `~/.pi/agent/extensions/` and every skill into `~/.pi/agent/skills/` (symlinks);
-2. installs the example config files **only if they don't already exist**;
-3. runs each extension's own `setup.sh` (for `voice-to-chat`: creates the Python
-   venv, installs PortAudio + ffmpeg on macOS, and the Whisper model).
+1. checks the required tools (`pi`, Node.js >= 20, `npx`, Python 3) and warns
+   early about anything missing;
+2. links every extension into `~/.pi/agent/extensions/` and every skill into
+   `~/.pi/agent/skills/` (symlinks), removing stale links and keeping backups
+   outside the directories Pi scans;
+3. installs the example config files **only if they don't already exist**;
+4. runs each extension's own `setup.sh` (for `voice-to-chat`: creates the Python
+   venv, installs PortAudio + ffmpeg when needed, downloads the model matching
+   the detected CPU/CUDA/MLX backend, and verifies the runtime).
+
+Existing configs are never overwritten. If `settings.json` or `models.json` is
+newly copied, the script warns that the examples point to **local endpoints**
+(`localhost`) and must be adjusted for the current machine.
 
 If you only want the links and configs, without installing native dependencies:
 
 ```bash
 ~/pi-agent-config/setup.sh --no-native
 ```
+
+Other options: `--skills-only` links only the learning skills, `--yes` runs
+every native setup without asking, and `--update` pulls the latest version and
+refreshes the extensions already configured on this machine.
 
 Then:
 ```bash
@@ -137,10 +151,25 @@ are documented in [the shared reference](skills/learn-plan/references/workflow.m
 ## Updating
 
 ```bash
+cd ~/pi-agent-config
+./setup.sh --update
+```
+
+`--update` does a `git pull --ff-only`, re-links all extensions and skills, and
+re-runs the native setup of every extension that is already configured on this
+machine (for example, to refresh the Python venv and Whisper model). It does
+not silently run a setup you previously skipped: run that extension's
+`setup.sh` manually when you want it.
+
+If you prefer to pull manually:
+
+```bash
 cd ~/pi-agent-config && git pull
-# if you added/modified extensions or skills:
 ./setup.sh
 ```
+
+A plain `./setup.sh` links new or changed resources and asks only for setups
+that are still missing; it leaves already-configured native setups alone.
 
 ## Structure
 
@@ -161,18 +190,20 @@ pi-agent-config/
 │   │   ├── setup.sh        # installs venv + PortAudio/ffmpeg + model
 │   │   ├── README.md
 │   │   └── .gitignore
-│   ├── btw/              # side question panel (/btw)
+│   ├── btw/                # side question panel (/btw)
+│   │   └── index.ts
+│   ├── auto-compact/       # earlier context-window compaction (/autocompact)
 │   │   └── index.ts
 │   ├── pi-banner/          # session title + header
 │   │   └── index.ts
-│   ├── token-stats/      # token/cost stats (/stats)
+│   ├── token-stats/        # token/cost stats (/stats)
 │   │   └── index.ts
-│   ├── tok-speed/        # output tokens/sec in the footer
+│   ├── tok-speed/          # output tokens/sec in the footer
 │   │   └── index.ts
-│   └── response-sound/     # answer sound (/sound)
+│   ├── response-sound/     # answer sound (/sound)
+│   │   └── index.ts
+│   └── daily-report/       # day report (/report, /daily)
 │       └── index.ts
-│   ├── daily-report/       # day report (/report, /daily)
-│   │   └── index.ts
 └── examples/
     ├── settings.json
     ├── models.json

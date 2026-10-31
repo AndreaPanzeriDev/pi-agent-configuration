@@ -7,7 +7,8 @@
  * Configuration (in priority order):
  *   1. Environment variable  PI_RESPONSE_SOUND  (path to an audio file or a
  *      built-in name such as "blip" / "ding")
- *   2. Config file           ~/.pi/agent/response-sound.json
+ *   2. Config file           <agent-dir>/response-sound.json
+ *      (the Pi agent dir; defaults to ~/.pi/agent, honors PI_CODING_AGENT_DIR)
  *        {
  *          "enabled":  true,
  *          "sound":    "blip",
@@ -24,7 +25,10 @@
  *   /sound on | off     Enable / disable the feature
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+	getAgentDir,
+	type ExtensionAPI,
+} from "@earendil-works/pi-coding-agent";
 
 import { execFile, execSync } from "node:child_process";
 import fs from "node:fs";
@@ -33,7 +37,7 @@ import path from "node:path";
 
 type Config = { enabled: boolean; sound: string; volume: number };
 
-const CONFIG_PATH = path.join(os.homedir(), ".pi", "agent", "response-sound.json");
+const CONFIG_PATH = path.join(getAgentDir(), "response-sound.json");
 
 const BUILTIN_SOUNDS: Record<string, () => string> = {
 	// Each returns the path to a generated WAV file (16-bit PCM, playable by
